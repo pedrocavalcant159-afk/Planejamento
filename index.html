@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#fbfbfa" />
+    <meta name="description" content="Seu espaço para planejar cada detalhe do casamento com tranquilidade." />
+    <title>Entre Nós — Planejamento do casamento</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#inicio" aria-label="Entre Nós, início"><span class="brand-mark">e<span>n</span></span><span><strong>entre nós</strong><small>PLANEJAMENTO DE CASAMENTO</small></span></a>
+        <div class="side-label">SEU CASAMENTO</div>
+        <nav class="nav-list" aria-label="Navegação principal">
+          <button class="nav-item active" data-page="inicio"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg></span>Visão geral</button>
+          <button class="nav-item" data-page="convidados"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1M16 5.5a3 3 0 0 1 0 5.8M18 14a5 5 0 0 1 3 4.6V20"/></svg></span>Convidados</button>
+          <button class="nav-item" data-page="financeiro"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span>Financeiro</button>
+          <button class="nav-item" data-page="cerimonia"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>Cerimônia & músicas</button>
+          <button class="nav-item" data-page="checklist"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 11 3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>O que levar</button>
+          <button class="nav-item" data-page="cronograma"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Cronograma</button>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="side-note"><span class="note-spark">✳</span><p>Um detalhe de cada vez.<br /><strong>Vocês estão indo muito bem.</strong></p><div class="note-progress"><span id="sidebar-progress"></span></div><small id="sidebar-progress-label">0% do planejamento concluído</small></div>
+        <button class="nav-item settings-link" id="edit-wedding"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/></svg></span>Detalhes do casamento</button>
+        <div class="sidebar-foot">FEITO COM CARINHO, PARA VOCÊS ♡</div>
+      </aside>
+      <main class="main-area">
+        <header class="topbar"><button id="mobile-menu" class="icon-button mobile-menu" aria-label="Abrir menu">☰</button><div class="breadcrumb"><span id="wedding-short-name">Meu casamento</span> <span>/</span> <strong id="current-section">Visão geral</strong></div><div class="topbar-right"><span class="topbar-date" id="today-date"></span><span class="avatar">♡</span></div></header>
+        <div id="page-content" class="page-content"></div>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="cursor-dot" id="cursor-dot" popover="manual" aria-hidden="true"></div><div class="cursor-ring" id="cursor-ring" aria-hidden="true"></div>
+    <dialog id="modal" class="modal"><form id="modal-form" method="dialog"><div class="modal-head"><div><p class="eyebrow" id="modal-eyebrow">DETALHES</p><h2 id="modal-title">Adicionar item</h2></div><button type="button" class="icon-button" id="modal-close" aria-label="Fechar">×</button></div><div id="modal-fields" class="modal-fields"></div><div class="modal-actions"><button type="button" class="button button-quiet" id="modal-cancel">Cancelar</button><button type="submit" class="button button-primary" id="modal-submit">Salvar</button></div></form></dialog>
+    <dialog id="import-dialog" class="modal import-modal"><form id="import-form" method="dialog"><div class="modal-head"><div><p class="eyebrow">IMPORTAÇÃO DE DADOS</p><h2 id="import-title">Importar TXT</h2></div><button type="button" class="icon-button" id="import-close" aria-label="Fechar">×</button></div><div id="import-content"></div><div class="modal-actions"><button type="button" class="button button-quiet" id="import-cancel">Cancelar</button><button type="button" class="button button-primary" id="import-confirm" disabled>Importar dados</button></div></form></dialog>
+  </body>
+</html>
