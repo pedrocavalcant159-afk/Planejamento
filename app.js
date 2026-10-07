@@ -481,7 +481,7 @@ $('#auth-form').addEventListener('submit', async event => {
     $('#auth-error').textContent = messages[error.code] || 'Não foi possível entrar. Confira as configurações do Firebase.';
   } finally { button.disabled = false; }
 });
-$('#sign-out').addEventListener('click', () => signOut(auth));
+$('#sign-out')?.addEventListener('click', () => signOut(auth));
 onAuthStateChanged(auth, async user => {
   if (stopRealtime) { stopRealtime(); stopRealtime = null; }
   activeUser = user;
