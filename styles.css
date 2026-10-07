@@ -443,3 +443,18 @@ td[data-label="Valor previsto"], td[data-label="Valor pago"] { text-align: right
   .ceremony-table th { background: #f3f3f0 !important; print-color-adjust: exact; }
   .ceremony-print .eyebrow { color: #777 !important; }
 }
+
+.auth-panel[hidden], .app-shell[hidden] { display: none !important; }
+.auth-panel { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f7f7f4; }
+.auth-card { width: min(100%, 430px); display: grid; gap: 12px; padding: 38px; border: 1px solid var(--line); border-radius: 20px; background: #fff; box-shadow: 0 18px 60px #24332912; }
+.auth-card .brand-mark { display: inline-grid; place-items: center; width: 48px; height: 48px; border-radius: 15px; background: var(--green); color: white; font: 700 25px 'Playfair Display', serif; }
+.auth-card .brand-mark span { color: #d8c3a2; }
+.auth-card .eyebrow { margin: 12px 0 0; }
+.auth-card h1 { margin: 0; font: 600 30px 'Playfair Display', serif; color: var(--ink); }
+.auth-card > p:not(.eyebrow):not(.auth-error) { margin: 0 0 8px; color: var(--muted); line-height: 1.55; }
+.auth-card label { font-size: 13px; font-weight: 600; color: var(--ink); }
+.auth-card input { width: 100%; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; font: inherit; }
+.auth-error { min-height: 18px; margin: 0; color: #a43f3f; font-size: 13px; }
+.auth-toggle { padding: 8px; border: 0; background: transparent; color: var(--green); font: inherit; cursor: pointer; }
+.sign-out { padding: 7px 10px; font-size: 12px; }
+@media (max-width: 560px) { .auth-card { padding: 28px 22px; } }

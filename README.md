@@ -1,6 +1,6 @@
 # Entre Nós — planejamento de casamento
 
-SPA responsiva em HTML, CSS e JavaScript, sem etapa de build ou dependências externas. Abra `index.html` no navegador para começar. Os dados ficam salvos localmente neste navegador.
+SPA responsiva em HTML, CSS e JavaScript, publicada como site estático e conectada ao Firebase Authentication e ao Cloud Firestore. Consulte [FIREBASE.md](FIREBASE.md) para configurar o projeto. Para trabalhar localmente, sirva os arquivos por HTTP; o login e a sincronização exigem conexão com o Firebase.
 
 ## O que está incluído
 

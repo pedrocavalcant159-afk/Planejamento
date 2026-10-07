@@ -1,3 +1,22 @@
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyAQqVENhMjVPYyauNr4O1Z0SXvb1I5qUBM',
+  authDomain: 'plancasa-d6785.firebaseapp.com',
+  projectId: 'plancasa-d6785',
+  storageBucket: 'plancasa-d6785.firebasestorage.app',
+  messagingSenderId: '804042107473',
+  appId: '1:804042107473:web:c7d0388851c45dd27ee670',
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+let activeUser = null;
+let stopRealtime = null;
+let saveQueue = Promise.resolve();
+let authMode = 'signin';
 const STORAGE_KEY = 'entre-nos-casamento-v1';
 const navLabels = { inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', cerimonia: 'Cerimônia & músicas', checklist: 'O que levar', cronograma: 'Cronograma' };
 const expenseCategories = ['Comidas & Buffet', 'Decoração & Cenografia', 'Local / Espaço / Sítio', 'Trajes & Beleza', 'Itens Avulsos & Lembrancinhas'];
@@ -77,7 +96,7 @@ function loadData() {
     return Object.fromEntries(Object.entries(defaultData).map(([key, value]) => [key, key === 'wedding' ? { ...structuredClone(value), ...(saved.wedding || {}) } : saved[key] ?? structuredClone(value)]));
   } catch { return structuredClone(defaultData); }
 }
-let data = loadData();
+let data = structuredClone(defaultData);
 let currentPage = 'inicio';
 let guestFilter = 'Todos';
 let guestSearch = '';
@@ -99,7 +118,14 @@ const empty = message => {
   const action = actions[currentPage];
   return `<div class="empty-state"><span class="empty-mark" aria-hidden="true">♡</span><span>${esc(message)}</span>${action ? `<button class="button button-secondary" data-action="${action[0]}">＋ ${action[1]}</button>` : ''}</div>`;
 };
-function save(message = '', animate = true) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); updateProgress(); animateNextRender = animate; if (message) notify(message); }
+function save(message = '', animate = true) {
+  updateProgress(); animateNextRender = animate;
+  if (message) notify(message);
+  if (!activeUser) return;
+  const plannerRef = doc(db, 'planners', activeUser.uid);
+  saveQueue = saveQueue.catch(() => {}).then(() => setDoc(plannerRef, { data, updatedAt: serverTimestamp() }));
+  saveQueue.catch(error => { console.error('Falha ao salvar no Firestore:', error); notify('Não foi possível salvar. Verifique sua conexão.'); });
+}
 function notify(message) { const t = $('#toast'); t.textContent = message; t.classList.remove('show', 'toast-pop'); void t.offsetWidth; t.classList.add('show', 'toast-pop'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show', 'toast-pop'), 2600); }
 function updateProgress() { const p = progress(); $('#sidebar-progress').style.width = `${p}%`; $('#sidebar-progress-label').textContent = `${p}% do planejamento concluído`; }
 function weddingStart() { return new Date(`${data.wedding.date}T${data.wedding.time || '11:30'}:00`); }
@@ -423,5 +449,80 @@ function initInteractiveCursor() {
 }
 initInteractiveCursor();
 $('#today-date').textContent = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
-render();
+$('#auth-toggle').addEventListener('click', () => {
+  authMode = authMode === 'signin' ? 'signup' : 'signin';
+  $('#auth-heading').textContent = authMode === 'signin' ? 'Acesse seu planejamento' : 'Crie sua conta';
+  $('#auth-description').textContent = authMode === 'signin' ? 'Entre com sua conta para acessar os dados em qualquer dispositivo.' : 'Use a mesma conta nos dispositivos que vão compartilhar este planejamento.';
+  $('#auth-submit').textContent = authMode === 'signin' ? 'Entrar' : 'Criar conta';
+  $('#auth-toggle').textContent = authMode === 'signin' ? 'Criar uma conta' : 'Já tenho uma conta';
+  $('#auth-password').autocomplete = authMode === 'signin' ? 'current-password' : 'new-password';
+  $('#auth-error').textContent = '';
+});
+$('#auth-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const email = $('#auth-email').value.trim();
+  const password = $('#auth-password').value;
+  const button = $('#auth-submit');
+  button.disabled = true;
+  $('#auth-error').textContent = '';
+  try {
+    if (authMode === 'signup') await createUserWithEmailAndPassword(auth, email, password);
+    else await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    const messages = {
+      'auth/email-already-in-use': 'Já existe uma conta com este e-mail. Entre nela.',
+      'auth/invalid-credential': 'E-mail ou senha incorretos.',
+      'auth/invalid-email': 'Digite um e-mail válido.',
+      'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
+      'auth/too-many-requests': 'Muitas tentativas. Aguarde e tente novamente.',
+      'auth/network-request-failed': 'Sem conexão. Verifique a internet e tente novamente.',
+      'auth/operation-not-allowed': 'Ative o método E-mail/Senha em Authentication no Firebase Console.',
+    };
+    $('#auth-error').textContent = messages[error.code] || 'Não foi possível entrar. Confira as configurações do Firebase.';
+  } finally { button.disabled = false; }
+});
+$('#sign-out').addEventListener('click', () => signOut(auth));
+onAuthStateChanged(auth, async user => {
+  if (stopRealtime) { stopRealtime(); stopRealtime = null; }
+  activeUser = user;
+  if (!user) {
+    $('#app-shell').hidden = true;
+    $('#auth-panel').hidden = false;
+    return;
+  }
+  $('#auth-panel').hidden = true;
+  $('#app-shell').hidden = false;
+  const plannerRef = doc(db, 'planners', user.uid);
+  try {
+    const saved = await getDoc(plannerRef);
+    if (saved.exists()) data = normalizeData(saved.data().data);
+    else {
+      data = loadData();
+      await setDoc(plannerRef, { data, updatedAt: serverTimestamp() });
+      localStorage.removeItem(STORAGE_KEY);
+    }
+    render();
+    updateProgress();
+    stopRealtime = onSnapshot(plannerRef, snapshot => {
+      if (!snapshot.exists() || snapshot.metadata.hasPendingWrites) return;
+      data = normalizeData(snapshot.data().data);
+      render();
+      updateProgress();
+    }, error => {
+      console.error('Falha ao sincronizar com o Firestore:', error);
+      notify('Falha ao sincronizar. Confira as regras do Firestore.');
+    });
+  } catch (error) {
+    console.error('Falha ao carregar o planejamento:', error);
+    $('#app-shell').hidden = true;
+    $('#auth-panel').hidden = false;
+    $('#auth-error').textContent = 'Não foi possível abrir o planejamento. Confira se o Firestore está criado e as regras foram publicadas.';
+  }
+});
+function normalizeData(saved = {}) {
+  return Object.fromEntries(Object.entries(defaultData).map(([key, value]) => [
+    key,
+    key === 'wedding' ? { ...structuredClone(value), ...(saved.wedding || {}) } : saved[key] ?? structuredClone(value),
+  ]));
+}
 setInterval(updateCountdown, 1000);

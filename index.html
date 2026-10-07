@@ -12,10 +12,25 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js" defer></script>
-    <script src="app.js" defer></script>
+    <script type="module" src="app.js"></script>
   </head>
   <body>
-    <div class="app-shell">
+    <section id="auth-panel" class="auth-panel" hidden>
+      <form id="auth-form" class="auth-card">
+        <span class="brand-mark">e<span>n</span></span>
+        <p class="eyebrow">PLANEJAMENTO DE CASAMENTO</p>
+        <h1 id="auth-heading">Acesse seu planejamento</h1>
+        <p id="auth-description">Entre com sua conta para acessar os dados em qualquer dispositivo.</p>
+        <label for="auth-email">E-mail</label>
+        <input id="auth-email" type="email" autocomplete="email" required />
+        <label for="auth-password">Senha</label>
+        <input id="auth-password" type="password" autocomplete="current-password" minlength="6" required />
+        <p id="auth-error" class="auth-error" role="alert"></p>
+        <button id="auth-submit" class="button button-primary" type="submit">Entrar</button>
+        <button id="auth-toggle" class="auth-toggle" type="button">Criar uma conta</button>
+      </form>
+    </section>
+    <div class="app-shell" id="app-shell" hidden>
       <aside class="sidebar" id="sidebar">
         <a class="brand" href="#inicio" aria-label="Entre Nós, início"><span class="brand-mark">e<span>n</span></span><span><strong>entre nós</strong><small>PLANEJAMENTO DE CASAMENTO</small></span></a>
         <div class="side-label">SEU CASAMENTO</div>
