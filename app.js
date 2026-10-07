@@ -18,7 +18,7 @@ let stopRealtime = null;
 let saveQueue = Promise.resolve();
 let authMode = 'signin';
 const STORAGE_KEY = 'entre-nos-casamento-v1';
-const navLabels = { inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', cerimonia: 'Cerimônia & músicas', checklist: 'O que levar', cronograma: 'Cronograma' };
+const navLabels = { inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', cerimonia: 'Cerimônia & músicas', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
 const expenseCategories = ['Comidas & Buffet', 'Decoração & Cenografia', 'Local / Espaço / Sítio', 'Trajes & Beleza', 'Itens Avulsos & Lembrancinhas'];
 const guestGroups = ['Família Noiva', 'Família Noivo', 'Padrinhos', 'Amigos'];
 const expenseStatuses = ['Pendente', 'Pago Pix', 'Cartão', 'Boleto', 'Presente Ganho'];
@@ -87,6 +87,7 @@ const defaultData = {
     { id: 't9', title: 'Cabelo e maquiagem', day: 'Sábado / Dia D', time: '08:30', description: 'Separar robe, água e lanchinho', status: 'A Fazer' },
     { id: 't10', title: 'Cerimônia', day: 'Sábado / Dia D', time: '11:30', description: 'Respirar fundo e aproveitar cada segundo ♡', status: 'A Fazer' },
   ],
+  notes: [],
 };
 
 function loadData() {
@@ -147,7 +148,7 @@ function setPage(page) { currentPage = page; animateNextRender = true; $('.nav-i
 function render() {
   const content = $('#page-content');
   $('#wedding-short-name').textContent = data.wedding.couple;
-  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, cerimonia: renderCeremony, checklist: renderChecklist, cronograma: renderTimeline })[currentPage]();
+  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, cerimonia: renderCeremony, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
   content.classList.toggle('page-enter', animateNextRender);
   if (animateNextRender) setTimeout(() => content.classList.remove('page-enter'), 900);
   animateNextRender = false;
@@ -202,6 +203,12 @@ function renderTimeline() {
   return `${heading('CONTAGEM REGRESSIVA', 'A semana do sim.', 'Cada tarefa no seu tempo — e espaço para curtir o caminho.', '<button class="button button-secondary" data-action="export-timeline">Exportar cronograma PDF</button><button class="button button-primary" data-action="add-task">＋ Nova tarefa</button>')}<div class="summary-row"><span class="summary-chip">Tarefas no total <strong>${data.tasks.length}</strong></span><span class="summary-chip">Concluídas <strong>${data.tasks.filter(t => t.status === 'Concluído').length}</strong></span><span class="summary-chip">A fazer <strong>${data.tasks.filter(t => t.status !== 'Concluído').length}</strong></span></div>
   ${days.map(day => { const tasks = data.tasks.filter(t => t.day === day).sort((a, b) => a.time.localeCompare(b.time)); return `<section class="day-section"><h2 class="day-title">${esc(day)} <span>${tasks.length} ${tasks.length === 1 ? 'tarefa' : 'tarefas'}</span></h2><article class="card day-tasks">${tasks.length ? tasks.map(t => `<div class="timeline-row"><span class="timeline-time">${esc(t.time || '—')}</span><span class="timeline-mark"></span><div><div class="timeline-title">${esc(t.title)}</div><div class="timeline-desc">${esc(t.description || '')}</div></div><div style="display:flex;gap:6px;align-items:center"><select class="status-select" data-task-status="${t.id}" aria-label="Status de ${esc(t.title)}">${taskStatuses.map(s => `<option ${t.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select><div class="row-actions"><button data-action="edit-task" data-id="${t.id}" aria-label="Editar">✎</button><button data-action="delete-task" data-id="${t.id}" aria-label="Excluir">×</button></div></div></div>`).join('') : empty('Sem tarefas planejadas para este dia.')}</article></section>`; }).join('')}`;
 }
+function renderNotes() {
+  const notes = [...data.notes].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const action = '<button class="button button-primary" data-action="add-note">＋ Nova anotação</button>';
+  return `${heading('SUAS IDEIAS', 'Anotações', 'Guarde ideias, lembretes e detalhes importantes do planejamento.', action)}
+  <section class="notes-grid">${notes.length ? notes.map(note => `<article class="card note-card"><div class="note-card-head"><span class="note-card-icon" aria-hidden="true">✎</span><div class="row-actions"><button data-action="edit-note" data-id="${esc(note.id)}" aria-label="Editar anotação">✎</button><button data-action="delete-note" data-id="${esc(note.id)}" aria-label="Excluir anotação">×</button></div></div><h2>${esc(note.title)}</h2><p>${esc(note.content).replaceAll('\n', '<br>')}</p><small>${note.updatedAt ? `Atualizada em ${new Date(note.updatedAt).toLocaleDateString('pt-BR')}` : 'Anotação'}</small></article>`).join('') : `<article class="card notes-empty"><span class="empty-mark" aria-hidden="true">✎</span><h2>Nenhuma anotação por enquanto</h2><p>Crie uma anotação para registrar ideias e lembretes do casamento.</p><button class="button button-secondary" data-action="add-note">＋ Criar primeira anotação</button></article>`}</section>`;
+}
 
 function field(name, label, value = '', type = 'text', options = null, full = false, extra = {}) {
   const id = `field-${name}`; let control;
@@ -214,7 +221,7 @@ function openModal(title, fields, onSave) {
   $('#modal-title').textContent = title; $('#modal-fields').innerHTML = fields; const modal = $('#modal');
   $('#modal-submit').textContent = 'Salvar'; $('#modal-submit').classList.remove('button-danger');
   const submit = event => { event.preventDefault(); const form = new FormData($('#modal-form')); onSave(Object.fromEntries(form.entries())); modal.close(); render(); };
-  $('#modal-form').onsubmit = submit; modal.showModal(); raiseInteractiveCursor(); setTimeout(() => $('#modal-fields input, #modal-fields select')?.focus(), 50);
+  $('#modal-form').onsubmit = submit; modal.showModal(); raiseInteractiveCursor(); setTimeout(() => $('#modal-fields input, #modal-fields select, #modal-fields textarea')?.focus(), 50);
 }
 function raiseInteractiveCursor() {
   const dot = $('#cursor-dot');
@@ -229,16 +236,17 @@ function recordForm(kind, record = {}) {
   if (kind === 'ceremony') return [field('step', 'Etapa', record.step || ceremonySteps[0], 'text', ceremonySteps, true), field('participants', 'Participantes', record.participants || '', 'text', null, true), field('music', 'Música', record.music || '', 'text'), field('artist', 'Artista', record.artist || '', 'text'), field('notes', 'Instruções / observações', record.notes || '', 'textarea', null, true)].join('');
   if (kind === 'supply') return [field('name', 'Item', record.name || '', 'text', null, true, { required: true }), field('category', 'Categoria', record.category || checklistCategories[0], 'text', checklistCategories), field('quantity', 'Quantidade / observação', record.quantity || '', 'text'), field('status', 'Status', record.status || 'Pendente', 'text', checklistStatuses)].join('');
   if (kind === 'task') return [field('title', 'Tarefa', record.title || '', 'text', null, true, { required: true }), field('day', 'Dia', record.day || 'Quarta-feira', 'text', ['Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado / Dia D']), field('time', 'Horário', record.time || '', 'time'), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('responsible', 'Responsável', record.responsible || '', 'text'), field('description', 'Detalhes', record.description || '', 'textarea', null, true)].join('');
+  if (kind === 'note') return [field('title', 'Título', record.title || '', 'text', null, true, { required: true }), field('content', 'Anotação', record.content || '', 'textarea', null, true, { required: true, placeholder: 'Escreva sua ideia ou lembrete...' })].join('');
   if (kind === 'ceremonial') return [field('time', 'Horário', record.time || '', 'time', null, false, { required: true }), field('title', 'Atividade', record.title || '', 'text', null, true, { required: true }), field('responsible', 'Responsável', record.responsible || '', 'text', null, false, { required: true }), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('details', 'Orientações para a equipe', record.details || '', 'textarea', null, true)].join('');
   if (kind === 'wedding') return [field('couple', 'Nomes do casal', data.wedding.couple, 'text', null, true, { required: true }), field('date', 'Data do casamento', data.wedding.date, 'date', null, false, { required: true }), field('time', 'Horário do casamento', data.wedding.time || '11:30', 'time', null, false, { required: true }), field('venue', 'Local', data.wedding.venue, 'text', null, true)].join('');
 }
 function addOrEdit(kind, id = null) {
-  const config = { guest: ['guests', 'convidado', 'name', 'id'], expense: ['expenses', 'gasto', 'description', 'id'], ceremony: ['ceremony', 'etapa', 'step', 'id'], ceremonial: ['ceremonial', 'horário da cerimonial', 'title', 'id'], supply: ['supplies', 'item', 'name', 'id'], task: ['tasks', 'tarefa', 'title', 'id'] }[kind];
+  const config = { guest: ['guests', 'convidado', 'name', 'id'], expense: ['expenses', 'gasto', 'description', 'id'], ceremony: ['ceremony', 'etapa', 'step', 'id'], ceremonial: ['ceremonial', 'horário da cerimonial', 'title', 'id'], supply: ['supplies', 'item', 'name', 'id'], task: ['tasks', 'tarefa', 'title', 'id'], note: ['notes', 'anotação', 'title', 'id'] }[kind];
   const [collection, label, , idKey] = config; const existing = id ? data[collection].find(x => x[idKey] === id) : null;
   openModal(`${existing ? 'Editar' : 'Adicionar'} ${label}`, recordForm(kind, existing || {}), values => {
     for (const k of ['companions', 'children', 'planned', 'paid']) if (values[k] !== undefined) values[k] = Number(values[k] || 0);
-    if (existing) Object.assign(existing, values); else data[collection].push({ id: uid(kind[0]), ...values });
-    save(existing ? 'Alterações salvas.' : 'Item adicionado.');
+    if (existing) Object.assign(existing, values, kind === 'note' ? { updatedAt: new Date().toISOString() } : {}); else data[collection].push({ id: uid(kind[0]), ...values, ...(kind === 'note' ? { updatedAt: new Date().toISOString() } : {}) });
+    save(kind === 'note' ? 'Anotação salva.' : existing ? 'Alterações salvas.' : 'Item adicionado.');
   });
 }
 function deleteRecord(collection, id, label) {
@@ -392,12 +400,14 @@ function bindPageEvents() {
     if (action === 'add-ceremonial' || action === 'edit-ceremonial') addOrEdit('ceremonial', id);
     if (action === 'add-supply' || action === 'edit-supply') addOrEdit('supply', id);
     if (action === 'add-task' || action === 'edit-task') addOrEdit('task', id);
+    if (action === 'add-note' || action === 'edit-note') addOrEdit('note', id);
     if (action === 'delete-guest') deleteRecord('guests', id, 'este convite');
     if (action === 'delete-expense') deleteRecord('expenses', id, 'este gasto');
     if (action === 'delete-ceremony') deleteRecord('ceremony', id, 'esta etapa');
     if (action === 'delete-ceremonial') deleteRecord('ceremonial', id, 'este horário');
     if (action === 'delete-supply') deleteRecord('supplies', id, 'este item');
     if (action === 'delete-task') deleteRecord('tasks', id, 'esta tarefa');
+    if (action === 'delete-note') deleteRecord('notes', id, 'esta anotação');
     if (action === 'print-ceremony') exportCeremonyPdf();
     if (action === 'export-ceremony') exportCeremonyPdf();
     if (action === 'export-ceremonial') exportCeremonialPdf();
