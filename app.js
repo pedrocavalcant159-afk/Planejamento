@@ -207,8 +207,37 @@ function renderNotes() {
   const notes = [...data.notes].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   const action = '<button class="button button-primary" data-action="add-note">＋ Nova anotação</button>';
   return `${heading('SUAS IDEIAS', 'Anotações', 'Guarde ideias, lembretes e detalhes importantes do planejamento.', action)}
-  <section class="notes-grid">${notes.length ? notes.map(note => `<article class="card note-card"><div class="note-card-head"><span class="note-card-icon" aria-hidden="true">✎</span><div class="row-actions"><button data-action="edit-note" data-id="${esc(note.id)}" aria-label="Editar anotação">✎</button><button data-action="delete-note" data-id="${esc(note.id)}" aria-label="Excluir anotação">×</button></div></div><h2>${esc(note.title)}</h2><p>${esc(note.content).replaceAll('\n', '<br>')}</p><small>${note.updatedAt ? `Atualizada em ${new Date(note.updatedAt).toLocaleDateString('pt-BR')}` : 'Anotação'}</small></article>`).join('') : `<article class="card notes-empty"><span class="empty-mark" aria-hidden="true">✎</span><h2>Nenhuma anotação por enquanto</h2><p>Crie uma anotação para registrar ideias e lembretes do casamento.</p><button class="button button-secondary" data-action="add-note">＋ Criar primeira anotação</button></article>`}</section>`;
+  <section class="notes-grid">${notes.length ? notes.map(note => `<article class="card note-card"><div class="note-card-head"><span class="note-card-icon" aria-hidden="true">✎</span><div class="row-actions"><button data-action="edit-note" data-id="${esc(note.id)}" aria-label="Editar anotação">✎</button><button data-action="delete-note" data-id="${esc(note.id)}" aria-label="Excluir anotação">×</button></div></div><h2>${esc(note.title)}</h2><div class="note-content">${renderNoteContent(note.content)}</div><small>${note.updatedAt ? `Atualizada em ${new Date(note.updatedAt).toLocaleDateString('pt-BR')}` : 'Anotação'}</small></article>`).join('') : `<article class="card notes-empty"><span class="empty-mark" aria-hidden="true">✎</span><h2>Nenhuma anotação por enquanto</h2><p>Crie uma anotação para registrar ideias e lembretes do casamento.</p><button class="button button-secondary" data-action="add-note">＋ Criar primeira anotação</button></article>`}</section>`;
 }
+
+
+const noteTags = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'BR', 'P', 'DIV', 'UL', 'OL', 'LI', 'A']);
+function safeNoteUrl(value) { try { const url = new URL(value, location.href); return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? url.href : ''; } catch { return ''; } }
+function sanitizeNoteHtml(html = '') {
+  const parsed = new DOMParser().parseFromString(String(html), 'text/html');
+  const clean = node => [...node.childNodes].map(child => {
+    if (child.nodeType === Node.TEXT_NODE) return esc(child.textContent);
+    if (child.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = child.tagName, content = clean(child);
+    if (!noteTags.has(tag)) return content;
+    if (tag === 'A') { const href = safeNoteUrl(child.getAttribute('href') || ''); return href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${content}</a>` : content; }
+    return `<${tag.toLowerCase()}>${content}</${tag.toLowerCase()}>`;
+  }).join('');
+  return clean(parsed.body);
+}
+function linkifyNoteText(html) {
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  const walk = node => [...node.childNodes].forEach(child => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const fragment = document.createDocumentFragment();
+      child.textContent.split(/(https?:\/\/[^\s<]+)/gi).forEach(part => {
+        if (/^https?:\/\//i.test(part)) { const href = safeNoteUrl(part); if (href) { const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = part; fragment.append(a); return; } }
+        fragment.append(document.createTextNode(part));
+      }); child.replaceWith(fragment);
+    } else if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== 'A') walk(child);
+  }); walk(parsed.body); return parsed.body.innerHTML;
+}
+function renderNoteContent(content = '') { return linkifyNoteText(sanitizeNoteHtml(content).replace(/\n/g, '<br>')); }
 
 function field(name, label, value = '', type = 'text', options = null, full = false, extra = {}) {
   const id = `field-${name}`; let control;
@@ -219,9 +248,14 @@ function field(name, label, value = '', type = 'text', options = null, full = fa
 }
 function openModal(title, fields, onSave) {
   $('#modal-title').textContent = title; $('#modal-fields').innerHTML = fields; const modal = $('#modal');
+  const isNote = Boolean($('#note-editor')); modal.classList.toggle('note-modal', isNote);
   $('#modal-submit').textContent = 'Salvar'; $('#modal-submit').classList.remove('button-danger');
-  const submit = event => { event.preventDefault(); const form = new FormData($('#modal-form')); onSave(Object.fromEntries(form.entries())); modal.close(); render(); };
-  $('#modal-form').onsubmit = submit; modal.showModal(); raiseInteractiveCursor(); setTimeout(() => $('#modal-fields input, #modal-fields select, #modal-fields textarea')?.focus(), 50);
+  const submit = event => { event.preventDefault(); const form = new FormData($('#modal-form')); const values = Object.fromEntries(form.entries()); if (isNote) { const editor = $('#note-editor'); if (!editor.textContent.trim()) { editor.focus(); notify('Escreva o conte\u00fado da anota\u00e7\u00e3o.'); return; } values.content = sanitizeNoteHtml(editor.innerHTML); } onSave(values); modal.close(); render(); };
+  $('#modal-form').onsubmit = submit; modal.showModal(); raiseInteractiveCursor(); setTimeout(() => (isNote ? $('#note-editor') : $('#modal-fields input, #modal-fields select, #modal-fields textarea'))?.focus(), 50);
+  if (isNote) $('#modal-fields').querySelectorAll('[data-note-command]').forEach(button => {
+    button.addEventListener('mousedown', event => event.preventDefault());
+    button.addEventListener('click', () => { const command = button.dataset.noteCommand, editor = $('#note-editor'); editor.focus(); if (command === 'createLink') { const input = prompt('Cole o endere\u00e7o do link (https://...)'); if (!input) return; const href = safeNoteUrl(input.trim()); if (!href || !/^https?:/i.test(href)) { notify('Use um link iniciado por http:// ou https://.'); return; } document.execCommand('createLink', false, href); } else document.execCommand(command, false, null); });
+  });
 }
 function raiseInteractiveCursor() {
   const dot = $('#cursor-dot');
@@ -236,7 +270,7 @@ function recordForm(kind, record = {}) {
   if (kind === 'ceremony') return [field('step', 'Etapa', record.step || ceremonySteps[0], 'text', ceremonySteps, true), field('participants', 'Participantes', record.participants || '', 'text', null, true), field('music', 'Música', record.music || '', 'text'), field('artist', 'Artista', record.artist || '', 'text'), field('notes', 'Instruções / observações', record.notes || '', 'textarea', null, true)].join('');
   if (kind === 'supply') return [field('name', 'Item', record.name || '', 'text', null, true, { required: true }), field('category', 'Categoria', record.category || checklistCategories[0], 'text', checklistCategories), field('quantity', 'Quantidade / observação', record.quantity || '', 'text'), field('status', 'Status', record.status || 'Pendente', 'text', checklistStatuses)].join('');
   if (kind === 'task') return [field('title', 'Tarefa', record.title || '', 'text', null, true, { required: true }), field('day', 'Dia', record.day || 'Quarta-feira', 'text', ['Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado / Dia D']), field('time', 'Horário', record.time || '', 'time'), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('responsible', 'Responsável', record.responsible || '', 'text'), field('description', 'Detalhes', record.description || '', 'textarea', null, true)].join('');
-  if (kind === 'note') return [field('title', 'Título', record.title || '', 'text', null, true, { required: true }), field('content', 'Anotação', record.content || '', 'textarea', null, true, { required: true, placeholder: 'Escreva sua ideia ou lembrete...' })].join('');
+  if (kind === 'note') return [field('title', 'T\u00edtulo', record.title || '', 'text', null, true, { required: true }), `<div class="field full"><label for="note-editor">Anota\u00e7\u00e3o</label><div class="note-toolbar" role="toolbar" aria-label="Formata\u00e7\u00e3o da anota\u00e7\u00e3o"><button type="button" data-note-command="bold" aria-label="Negrito" title="Negrito"><strong>B</strong></button><button type="button" data-note-command="italic" aria-label="It\u00e1lico" title="It\u00e1lico"><em>I</em></button><button type="button" data-note-command="underline" aria-label="Sublinhado" title="Sublinhado"><u>U</u></button><button type="button" data-note-command="strikeThrough" aria-label="Riscado" title="Riscado"><s>S</s></button><span></span><button type="button" data-note-command="createLink" aria-label="Inserir link" title="Inserir link">Link</button><button type="button" data-note-command="insertUnorderedList" aria-label="Lista" title="Lista">Lista</button></div><div id="note-editor" class="note-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Escreva sua ideia, cole um link ou formate o texto...">${sanitizeNoteHtml(record.content || '')}</div><small class="editor-hint">Selecione um trecho para formatar. Links escritos como https://... ficam clic\u00e1veis ao salvar.</small></div>`].join('');
   if (kind === 'ceremonial') return [field('time', 'Horário', record.time || '', 'time', null, false, { required: true }), field('title', 'Atividade', record.title || '', 'text', null, true, { required: true }), field('responsible', 'Responsável', record.responsible || '', 'text', null, false, { required: true }), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('details', 'Orientações para a equipe', record.details || '', 'textarea', null, true)].join('');
   if (kind === 'wedding') return [field('couple', 'Nomes do casal', data.wedding.couple, 'text', null, true, { required: true }), field('date', 'Data do casamento', data.wedding.date, 'date', null, false, { required: true }), field('time', 'Horário do casamento', data.wedding.time || '11:30', 'time', null, false, { required: true }), field('venue', 'Local', data.wedding.venue, 'text', null, true)].join('');
 }
