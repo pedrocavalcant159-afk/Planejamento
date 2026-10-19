@@ -296,7 +296,7 @@ td[data-label="Valor previsto"], td[data-label="Valor pago"] { text-align: right
 .note-toolbar button { min-width: 34px; height: 32px; padding: 0 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text); font-size: 12px; }
 .note-toolbar button:hover { border-color: #d8e1d9; background: #fff; }
 .note-toolbar span { width: 1px; height: 22px; margin: 0 3px; background: var(--line); }
-.note-editor { min-height: min(48vh, 440px); padding: 16px 18px; border: 1px solid #d1d5db; border-radius: 0 0 8px 8px; outline: 0; background: #fff; color: var(--text); font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.note-editor { min-height: min(48vh, 440px); padding: 16px 18px; border: 1px solid #d1d5db; border-radius: 0 0 8px 8px; outline: 0; background: #fff; color: var(--text); font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
 .note-editor:focus { border-color: var(--sage); box-shadow: 0 0 0 2px rgba(62, 123, 92, .12); }
 .note-editor:empty::before { color: var(--placeholder); content: attr(data-placeholder); pointer-events: none; }
 .note-editor a { color: var(--sage-dark); text-decoration: underline; }
