@@ -272,7 +272,8 @@ td[data-label="Valor previsto"], td[data-label="Valor pago"] { text-align: right
 .section-heading h2 { margin: 4px 0; font: 600 20px 'Playfair Display', serif; }
 .section-heading p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 11px; }
 .ceremonial-card { overflow: hidden; padding: 4px 17px; }
-.ceremonial-row { position: relative; display: grid; grid-template-columns: 55px 16px minmax(170px, 1fr) 120px auto; align-items: center; gap: 10px; padding: 13px 0; border-bottom: 1px solid #eef0f2; transition: background .2s, transform .2s; }
+.ceremonial-row { position: relative; display: grid; grid-template-columns: 55px 16px minmax(170px, 1fr) 24px auto; align-items: center; gap: 10px; padding: 13px 0; border-bottom: 1px solid #eef0f2; transition: background .2s, transform .2s; }
+.ceremonial-check { justify-self: center; }
 .ceremonial-row:last-child { border-bottom: 0; }
 .ceremonial-row time { color: var(--sage-dark); font-weight: 700; font-variant-numeric: tabular-nums; }
 .ceremonial-dot { width: 11px; height: 11px; border: 2px solid var(--sage); border-radius: 50%; background: #fff; }
@@ -410,8 +411,8 @@ td[data-label="Valor previsto"], td[data-label="Valor pago"] { text-align: right
   .timeline-row > div:last-child { grid-column: 3; display: flex !important; justify-content: flex-start; margin-top: 5px; }
   .timeline-mark::after { height: 50px; }
   .section-heading { align-items: flex-start; flex-direction: column; }
-  .ceremonial-row { grid-template-columns: 45px 13px 1fr; gap: 8px; }
-  .ceremonial-row > .status-select { grid-column: 3; max-width: 145px; }
+  .ceremonial-row { grid-template-columns: 45px 13px minmax(0, 1fr) 24px; gap: 8px; }
+  .ceremonial-row > .ceremonial-check { grid-column: 4; }
   .ceremonial-row > .row-actions { grid-column: 3; }
   .table-wrap { overflow: visible; }
   .table-wrap table, .table-wrap tbody { display: block; width: 100%; }
