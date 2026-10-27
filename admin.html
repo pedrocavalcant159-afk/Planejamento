@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="robots" content="noindex" />
+    <title>Administração — Entre Nós</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="admin.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+    <script type="module" src="admin.js"></script>
+  </head>
+  <body class="admin-page">
+    <section id="auth-panel" class="auth-panel">
+      <form id="auth-form" class="auth-card">
+        <span class="brand brand-auth"><svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="18" r="7.5"/><circle cx="20" cy="18" r="7.5"/><path d="m16 4 2.4 3.2L16 10.4l-2.4-3.2z"/></svg><span class="brand-word">entre nós</span></span>
+        <p class="eyebrow">PAINEL ADMINISTRATIVO</p>
+        <h1>Entrar como administrador</h1>
+        <p>Use o e-mail de administrador cadastrado no Firebase.</p>
+        <label for="auth-email">E-mail</label>
+        <input id="auth-email" type="email" autocomplete="email" required />
+        <label for="auth-password">Senha</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required />
+        <p id="auth-error" class="auth-error" role="alert"></p>
+        <button id="auth-submit" class="button button-primary" type="submit">Entrar</button>
+      </form>
+    </section>
+    <div class="app-shell" id="app-shell" hidden>
+      <header class="topbar">
+        <div class="topbar-left">
+          <a class="brand" href="admin.html" aria-label="Entre Nós, administração"><svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="18" r="7.5"/><circle cx="20" cy="18" r="7.5"/><path d="m16 4 2.4 3.2L16 10.4l-2.4-3.2z"/></svg><span class="brand-word">entre nós</span></a>
+          <span class="status-pill admin-pill"><i></i><span>Administração</span></span>
+        </div>
+        <div class="topbar-right">
+          <button id="open-settings" class="button button-secondary" type="button"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Configurações</span></button>
+          <button id="sign-out" class="button button-secondary sign-out" type="button"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg><span>Sair</span></button>
+        </div>
+      </header>
+      <main class="main-area">
+        <div id="page-content" class="page-content"></div>
+      </main>
+    </div>
+    <dialog id="admin-modal" class="modal admin-modal"><div id="admin-modal-body"></div></dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

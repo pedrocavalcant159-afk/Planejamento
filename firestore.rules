@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Publique em: Firebase Console → Firestore Database → Regras.
+// Troque o e-mail abaixo pelo(s) mesmo(s) de ADMIN_EMAILS em lib/firebase.js.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.email.lower() in ['pedrocavalcant159@gmail.com']; }
+    function siteData(slug) { return get(/databases/$(database)/documents/sites/$(slug)).data; }
+    function isOwner(slug) { return signedIn() && siteData(slug).ownerUid == request.auth.uid; }
+    function siteActive(slug) { return exists(/databases/$(database)/documents/sites/$(slug)) && siteData(slug).active == true; }
+    function shortText(value, min, max) { return value is string && value.size() >= min && value.size() <= max; }
+
+    // Configurações do Pix e preços: só o administrador.
+    match /settings/{id} { allow read, write: if isAdmin(); }
+
+    // Cadastro completo dos clientes (inclui a senha gerada): só o administrador.
+    match /clients/{uid} { allow read, write: if isAdmin(); }
+
+    // Resumo da compra que o cliente vê na área dele.
+    match /accounts/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow write: if isAdmin();
+    }
+
+    // Dados do organizador de casamento de cada cliente.
+    match /planners/{uid} { allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid); }
+
+    // Dados públicos usados pelo convite, lista de presentes e site de casamento.
+    match /sites/{slug} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      // Confirmações de presença: convidados só podem criar; o casal e o admin leem.
+      match /rsvps/{id} {
+        allow create: if siteActive(slug)
+          && request.resource.data.keys().hasOnly(['name', 'people', 'attending', 'message', 'product', 'createdAt'])
+          && shortText(request.resource.data.name, 1, 80)
+          && request.resource.data.people is int && request.resource.data.people >= 0 && request.resource.data.people <= 20
+          && request.resource.data.attending is bool
+          && shortText(request.resource.data.message, 0, 500)
+          && request.resource.data.product in ['convite', 'site']
+          && request.resource.data.createdAt == request.time;
+        allow read, delete: if isAdmin() || isOwner(slug);
+      }
+
+      // Presentes escolhidos: cada presente só pode ser escolhido uma vez (sem update).
+      match /reservas/{giftId} {
+        allow read: if true;
+        allow create: if siteActive(slug)
+          && request.resource.data.keys().hasOnly(['name', 'message', 'createdAt'])
+          && shortText(request.resource.data.name, 1, 80)
+          && shortText(request.resource.data.message, 0, 300)
+          && request.resource.data.createdAt == request.time;
+        allow delete: if isAdmin() || isOwner(slug);
+      }
+    }
+  }
+}

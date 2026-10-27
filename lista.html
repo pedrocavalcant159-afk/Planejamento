@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR" data-model="1">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Lista de presentes do chá de panela." />
+    <title>Lista de presentes · Chá de Panela</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Great+Vibes&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="lib/public.css" />
+    <link rel="stylesheet" href="lista.css" />
+    <script type="module" src="lista.js"></script>
+  </head>
+  <body>
+    <div id="app" class="loading" aria-busy="true"></div>
+    <dialog id="gift-dialog" class="gift-dialog" aria-labelledby="dialog-title">
+      <form id="gift-form" method="dialog"></form>
+    </dialog>
+    <div class="celebrate" id="celebrate" role="dialog" aria-modal="true" aria-labelledby="celebrate-title" hidden></div>
+    <div class="public-toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

@@ -1,21 +1,57 @@
-# Entre Nós — planejamento de casamento
+# Entre Nós — plataforma de produtos para casamento
 
-SPA responsiva em HTML, CSS e JavaScript, publicada como site estático e conectada ao Firebase Authentication e ao Cloud Firestore. Consulte [FIREBASE.md](FIREBASE.md) para configurar o projeto. Para trabalhar localmente, sirva os arquivos por HTTP; o login e a sincronização exigem conexão com o Firebase.
+Site estático (HTML, CSS e JavaScript) conectado ao Firebase Authentication e ao Cloud Firestore. Um único site atende todos os clientes: cada casal recebe links próprios (`convite.html?c=marina-rafael`) e um usuário e senha para a área do cliente.
 
-## O que está incluído
+## Produtos (3 modelos cada: Jardim, Rosé e Minimal)
 
-- Visão geral com contagem regressiva, convidados confirmados, orçamento e tarefas.
-- Lista de convidados com busca, filtros, acompanhantes e gestão dos convites.
-- Orçamento por categoria, incluindo valores previstos, pagos e forma de pagamento.
-- Roteiro do cortejo editável e opção **Exportar roteiro em PDF** (abre a impressão; escolha “Salvar como PDF”).
-- Checklist do que levar, com estados pendente, comprado, no carro e no local.
-- Cronograma por dia, com horários, detalhes e andamento das tarefas.
-- Edição dos nomes, da data e do local do casamento.
+| Produto | Página | Usa os dados de |
+| --- | --- | --- |
+| Convite virtual interativo de chá de panela | `convite.html?c=<link>` | Chá de panela |
+| Lista de presentes de chá de panela | `lista.html?c=<link>` | Chá de panela |
+| Ebook PDF chá de panela | baixado na área do cliente | Chá de panela |
+| Site de casamento | `site.html?c=<link>` | Casamento |
+| Organizador de casamento | `organizador.html` (com login) | Casamento |
 
-Para recomeçar com os dados de exemplo, apague a chave `entre-nos-casamento-v1` do armazenamento local deste site no navegador.
+## Páginas
 
-## Importacao e relatorios
+- `index.html`: área do cliente. Login com usuário e senha, produtos comprados, Pix pendente, confirmações de presença e presentes escolhidos.
+- `admin.html`: painel administrativo. Cadastrar compras, gerar usuário e senha, gerar QR Code Pix, marcar como pago, redefinir senha, cancelar e excluir.
+- `convite.html`, `lista.html`, `site.html`: páginas públicas que os convidados abrem.
+- `organizador.html`: organizador de casamento (convidados, financeiro, cronograma etc.).
 
-- Importe arquivos `.txt` ou cole texto para convidados, gastos, checklist do sitio e musicas/cortejo. A previa permite corrigir campos e escolher entre adicionar ou substituir a lista.
-- Exporte PDFs do roteiro da cerimonia, do relatorio financeiro e do checklist com cronograma e responsaveis.
-- A geracao de PDF roda no navegador usando jsPDF e AutoTable carregados pelo CDN; e necessaria conexao para carregar essas bibliotecas.
+## Configuração (uma vez)
+
+1. **E-mail de administrador**: troque `seu-email-de-admin@exemplo.com` pelo seu e-mail em `lib/firebase.js` (`ADMIN_EMAILS`) **e** em `firestore.rules`.
+2. **Firebase Console → Authentication → Sign-in method**: ative **E-mail/senha**.
+3. **Authentication → Users → Adicionar usuário**: crie o seu usuário administrador com esse e-mail e uma senha.
+4. **Authentication → Settings → Domínios autorizados**: adicione o domínio onde o site ficará hospedado.
+5. **Firestore Database → Regras**: cole o conteúdo de `firestore.rules` e publique.
+6. Hospede todos os arquivos (qualquer hospedagem estática: Firebase Hosting, Netlify, GitHub Pages…). Para testar localmente, sirva a pasta por HTTP (ex.: `python -m http.server`).
+7. Entre em `admin.html` → **Configurações** e cadastre sua chave Pix, nome e cidade do recebedor e os preços padrão.
+
+## Fluxo de venda
+
+1. **Novo cliente**: nomes do casal, WhatsApp, produtos e modelos, datas e locais. O usuário e a senha são gerados na hora.
+2. **Pix**: gere o QR Code e copie a mensagem de cobrança (ou envie direto pelo WhatsApp). O cliente também vê o Pix ao entrar na área dele.
+3. **Marcar como pago**: libera os links públicos e os produtos na área do cliente.
+4. **Mensagem de acesso**: copie e envie ao casal (área do cliente, usuário, senha e links).
+
+## Como funciona por dentro
+
+Coleções do Firestore:
+
+- `clients/{uid}`: cadastro completo, inclusive a senha gerada (só o admin lê).
+- `accounts/{uid}`: resumo da compra visto pelo cliente (status, produtos, código Pix).
+- `sites/{link}`: dados públicos das páginas (casal, datas, locais, modelos, se está liberado).
+- `sites/{link}/rsvps`: confirmações de presença do convite e do site.
+- `sites/{link}/reservas`: presentes escolhidos na lista (um por presente).
+- `planners/{uid}`: dados do organizador.
+- `settings/main`: chave Pix e preços.
+
+Observações:
+
+- Clientes entram com um usuário simples; internamente o Firebase usa o e-mail `usuario@acesso.entrenos.app`.
+- Para redefinir a senha sem servidor, o painel entra na conta do cliente com a senha guardada e define uma nova. Por isso os clientes não trocam a senha sozinhos.
+- O Pix é um BR Code estático gerado no navegador. A confirmação do pagamento é manual (botão **Marcar como pago**).
+- Contas antigas do organizador, criadas antes da plataforma, não têm cadastro em `accounts` e por isso não abrem mais o organizador. Recadastre esses casais pelo painel.
+- PDFs (ebook e relatórios do organizador) são gerados no navegador com jsPDF carregado por CDN.

@@ -1,24 +1,12 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { auth, db, isAdmin, loginToEmail } from './lib/firebase.js';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyAQqVENhMjVPYyauNr4O1Z0SXvb1I5qUBM',
-  authDomain: 'plancasa-d6785.firebaseapp.com',
-  projectId: 'plancasa-d6785',
-  storageBucket: 'plancasa-d6785.firebasestorage.app',
-  messagingSenderId: '804042107473',
-  appId: '1:804042107473:web:c7d0388851c45dd27ee670',
-};
-const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
 let activeUser = null;
 let stopRealtime = null;
 let saveQueue = Promise.resolve();
-let authMode = 'signin';
 const STORAGE_KEY = 'entre-nos-casamento-v1';
-const navLabels = { inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', cerimonia: 'Cerimônia & músicas', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
+const navLabels = { inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', cerimonia: 'Cerimônia & músicas', cerimonial: 'Cerimonial do dia D', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
 const expenseCategories = ['Comidas & Buffet', 'Decoração & Cenografia', 'Local / Espaço / Sítio', 'Trajes & Beleza', 'Itens Avulsos & Lembrancinhas'];
 const guestGroups = ['Família Noiva', 'Família Noivo', 'Padrinhos', 'Amigos'];
 const expenseStatuses = ['Pendente', 'Pago Pix', 'Cartão', 'Boleto', 'Presente Ganho'];
@@ -105,6 +93,24 @@ let expenseFilter = 'Todas';
 let toastTimer;
 let animateNextRender = true;
 const $ = (s, root = document) => root.querySelector(s);
+const icons = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  users: '<circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1M16 5.5a3 3 0 0 1 0 5.8M18 14a5 5 0 0 1 3 4.6V20"/>',
+  wallet: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  check: '<path d="m9 11 3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
+};
+const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
 const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const uid = prefix => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -115,9 +121,9 @@ const planned = () => data.expenses.reduce((n, e) => n + Number(e.planned || 0),
 const progress = () => Math.round((data.tasks.filter(t => t.status === 'Concluído').length / Math.max(data.tasks.length, 1)) * 100);
 const badge = (text, cls = text.toLowerCase().replaceAll(' ', '-')) => `<span class="badge badge-${esc(cls)}">${esc(text)}</span>`;
 const empty = message => {
-  const actions = { convidados: ['add-guest', 'Adicionar convidado'], financeiro: ['add-expense', 'Adicionar gasto'], cerimonia: ['add-ceremony', 'Adicionar etapa'], checklist: ['add-supply', 'Adicionar item'], cronograma: ['add-task', 'Adicionar tarefa'] };
+  const actions = { convidados: ['add-guest', 'Adicionar convidado'], financeiro: ['add-expense', 'Adicionar gasto'], cerimonia: ['add-ceremony', 'Adicionar etapa'], cerimonial: ['add-ceremonial', 'Adicionar horário'], checklist: ['add-supply', 'Adicionar item'], cronograma: ['add-task', 'Adicionar tarefa'] };
   const action = actions[currentPage];
-  return `<div class="empty-state"><span class="empty-mark" aria-hidden="true">♡</span><span>${esc(message)}</span>${action ? `<button class="button button-secondary" data-action="${action[0]}">＋ ${action[1]}</button>` : ''}</div>`;
+  return `<div class="empty-state"><span class="empty-mark" aria-hidden="true">♡</span><span>${esc(message)}</span>${action ? `<button class="button button-secondary" data-action="${action[0]}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>${action[1]}</button>` : ''}</div>`;
 };
 function save(message = '', animate = true) {
   updateProgress(); animateNextRender = animate;
@@ -132,23 +138,30 @@ function updateProgress() { const p = progress(); $('#sidebar-progress').style.w
 function weddingStart() { return new Date(`${data.wedding.date}T${data.wedding.time || '11:30'}:00`); }
 function countdownState() {
   const seconds = Math.floor((weddingStart() - new Date()) / 1000);
+  if (!data.wedding.date || Number.isNaN(seconds)) return { unknown: true, complete: false, days: 0, hours: 0, minutes: 0, seconds: 0 };
   if (seconds <= 0) return { complete: true, days: 0, hours: 0, minutes: 0, seconds: 0 };
   return { complete: false, days: Math.floor(seconds / 86400), hours: Math.floor(seconds % 86400 / 3600), minutes: Math.floor(seconds % 3600 / 60), seconds: seconds % 60 };
 }
 function daysRemaining() { return countdownState().days; }
+function updateTopbarStatus() {
+  const state = countdownState(), pill = $('#topbar-status');
+  pill.classList.toggle('is-done', state.complete);
+  pill.querySelector('span').textContent = state.unknown ? 'Defina a data' : state.complete ? 'Casamento realizado' : state.days === 0 ? 'É hoje!' : `Faltam ${state.days} ${state.days === 1 ? 'dia' : 'dias'}`;
+}
 function updateCountdown() {
+  updateTopbarStatus();
   const state = countdownState(); const timer = $('#live-countdown');
-  if (!timer) return;
+  if (!timer || state.unknown) return;
   if (state.complete) { timer.classList.add('countdown-complete'); timer.innerHTML = '<strong>O grande dia já aconteceu ♡</strong><span>Atualize a data do casamento nos detalhes</span>'; return; }
   timer.classList.remove('countdown-complete');
   [['days', state.days], ['hours', String(state.hours).padStart(2, '0')], ['minutes', String(state.minutes).padStart(2, '0')], ['seconds', String(state.seconds).padStart(2, '0')]].forEach(([unit, value]) => { const el = timer.querySelector(`[data-count="${unit}"]`); if (el && el.textContent !== String(value)) { el.textContent = value; el.classList.remove('count-tick'); void el.offsetWidth; el.classList.add('count-tick'); } });
 }
 function dateLabel(value, options = { day: 'numeric', month: 'long', year: 'numeric' }) { if (!value) return 'Defina a data'; return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', options); }
-function setPage(page) { currentPage = page; animateNextRender = true; $('.nav-item.active')?.classList.remove('active'); $(`.nav-item[data-page="${page}"]`)?.classList.add('active'); $('#current-section').textContent = navLabels[page]; $('#sidebar').classList.remove('open'); render(); }
+function setPage(page) { currentPage = page; animateNextRender = true; $('.nav-item.active')?.classList.remove('active'); $(`.nav-item[data-page="${page}"]`)?.classList.add('active'); document.title = `${navLabels[page]} — Entre Nós`; $('#sidebar').classList.remove('open'); render(); }
 function render() {
   const content = $('#page-content');
-  $('#wedding-short-name').textContent = data.wedding.couple;
-  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, cerimonia: renderCeremony, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
+  updateTopbarStatus();
+  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, cerimonia: renderCeremony, cerimonial: renderCeremonial, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
   content.classList.toggle('page-enter', animateNextRender);
   if (animateNextRender) setTimeout(() => content.classList.remove('page-enter'), 900);
   animateNextRender = false;
@@ -162,52 +175,63 @@ function render() {
 }
 function heading(kicker, title, desc, action = '') { return `<div class="page-heading"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${desc}</p></div><div class="heading-actions">${action}</div></div>`; }
 function renderDashboard() {
-  const countdown = countdownState(), d = countdown.days, tasks = [...data.tasks].filter(t => t.status !== 'Concluído').slice(0, 4), paidRatio = planned() ? Math.min(100, Math.round(spent() / planned() * 100)) : 0;
+  const countdown = countdownState(), days = ['Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado / Dia D'], dayShort = { 'Quarta-feira': 'Qua', 'Quinta-feira': 'Qui', 'Sexta-feira': 'Sex', 'Sábado / Dia D': 'Sáb' };
+  const pending = data.tasks.filter(t => t.status !== 'Concluído').sort((a, b) => days.indexOf(a.day) - days.indexOf(b.day) || (a.time || '').localeCompare(b.time || '')), next = pending[0], tasks = pending.slice(0, 5);
+  const doneTasks = data.tasks.length - pending.length, paidRatio = planned() ? Math.min(100, Math.round(spent() / planned() * 100)) : 0, onSite = data.supplies.filter(s => s.status === 'No Local').length;
   const groups = expenseCategories.map(c => { const sum = data.expenses.filter(e => e.category === c).reduce((a, e) => a + Number(e.planned || 0), 0); return { c, sum }; }).filter(x => x.sum).sort((a, b) => b.sum - a.sum);
-  return `${heading('SEU GRANDE DIA', 'Tudo está tomando forma.', 'Um espaço só de vocês para cuidar de cada detalhe com calma.')}
-  <section class="hero"><div class="hero-copy"><p class="eyebrow">COM CARINHO, PARA ${esc(data.wedding.couple.toLocaleUpperCase('pt-BR'))}</p><h2>O amor mora nos detalhes.</h2><p>${esc(data.wedding.venue || 'Seu lugar especial')} · ${dateLabel(data.wedding.date)} · ${esc(data.wedding.time || '11:30')}</p><button class="button button-secondary" data-action="edit-wedding">Editar data e horário</button></div><div class="countdown ${countdown.complete ? 'countdown-complete' : ''}" id="live-countdown" aria-label="Contagem regressiva">${countdown.complete ? '<strong>O grande dia já aconteceu ♡</strong><span>Atualize a data nos detalhes</span>' : `<div class="count-unit"><strong data-count="days">${countdown.days}</strong><span>dias</span></div><div class="count-unit"><strong data-count="hours">${String(countdown.hours).padStart(2, '0')}</strong><span>horas</span></div><div class="count-unit"><strong data-count="minutes">${String(countdown.minutes).padStart(2, '0')}</strong><span>minutos</span></div><div class="count-unit"><strong data-count="seconds">${String(countdown.seconds).padStart(2, '0')}</strong><span>segundos</span></div>`}</div></section>
-  <section class="stats-grid"><article class="card stat-card"><div class="stat-top"><span>Convidados confirmados</span><span class="stat-icon">♧</span></div><div class="stat-value">${confirmedGuests()}</div><div class="stat-foot">de ${totalGuests()} pessoas na lista</div></article><article class="card stat-card"><div class="stat-top"><span>Orçamento planejado</span><span class="stat-icon gold">◉</span></div><div class="stat-value">${money(planned())}</div><div class="stat-foot">${money(spent())} já pagos</div></article><article class="card stat-card"><div class="stat-top"><span>Pagamentos realizados</span><span class="stat-icon rose">♡</span></div><div class="stat-value">${paidRatio}%</div><div class="stat-foot">${money(Math.max(0, planned() - spent()))} restante a pagar</div></article><article class="card stat-card"><div class="stat-top"><span>Tarefas concluídas</span><span class="stat-icon">✓</span></div><div class="stat-value">${progress()}%</div><div class="stat-foot">${data.tasks.filter(t => t.status === 'Concluído').length} de ${data.tasks.length} tarefas prontas</div></article></section>
-  <section class="dashboard-grid"><article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Visão do orçamento</h2><p class="panel-subtitle">Um panorama leve dos gastos planejados</p></div><button class="text-button" data-go="financeiro">Ver detalhes →</button></div><div class="budget-total">${money(spent())}</div><div class="budget-meta"><span>do total de ${money(planned())}</span><span>${paidRatio}% pago</span></div><div class="progress-track"><span style="width:${paidRatio}%"></span></div><div class="legend-row"><span><i class="legend-dot"></i>Valor pago</span><span><i class="legend-dot soft"></i>Restante</span></div><div class="category-list" style="margin-top:20px">${groups.length ? groups.map(x => `<div class="category-row"><span class="category-name">${esc(x.c)}</span><span class="category-value">${money(x.sum)}</span><div class="mini-track"><span style="width:${Math.max(3, Math.round(x.sum / planned() * 100))}%"></span></div></div>`).join('') : empty('Adicione seus primeiros gastos.')}</div></article>
-  <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Próximos passos</h2><p class="panel-subtitle">Pequenos passos, grande dia</p></div><button class="text-button" data-go="cronograma">Ver cronograma →</button></div><div class="task-list">${tasks.length ? tasks.map(t => `<label class="task-row"><input class="task-check" type="checkbox" data-task-check="${t.id}" ${t.status === 'Concluído' ? 'checked' : ''}><span class="task-text ${t.status === 'Concluído' ? 'done' : ''}">${esc(t.title)}</span><span class="task-meta">${esc(t.day.replace(' / Dia D', ''))}</span></label>`).join('') : empty('Tudo por aqui concluído!')}</div></article></section>`;
+  const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const stat = (page, iconName, label, value, foot) => `<button class="card stat-card" data-go="${page}"><div class="stat-top"><span class="stat-icon">${icon(iconName)}</span><span>${label}</span></div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></button>`;
+  return `${heading('PAINEL DO CASAMENTO', 'Visão geral.', today, '<button class="button button-pill" data-go="convidados">Convidados</button><button class="button button-pill" data-go="financeiro">Financeiro</button><button class="button button-pill" data-action="edit-wedding">Detalhes do casamento</button>')}
+  <section class="card event-card"><span class="event-icon">${icon('heart')}</span><div class="event-info"><div class="event-title"><h2>${esc(data.wedding.couple || 'Nosso casamento')}</h2><span class="status-pill ${countdown.complete ? 'is-done' : ''}"><i></i>${countdown.unknown ? 'Data a definir' : countdown.complete ? 'Casamento realizado' : countdown.days === 0 ? 'É hoje!' : `Faltam ${countdown.days} ${countdown.days === 1 ? 'dia' : 'dias'}`}</span></div><p>${[esc(data.wedding.venue || 'Local a definir'), dateLabel(data.wedding.date), esc(data.wedding.time || '')].filter(Boolean).join(' · ')}</p><div class="week-chips">${days.map(day => { const list = data.tasks.filter(t => t.day === day), done = list.filter(t => t.status === 'Concluído').length; return `<span class="week-chip ${list.length && done === list.length ? 'is-done' : ''} ${next?.day === day ? 'is-current' : ''}" title="${esc(day)}: ${done} de ${list.length} tarefas">${dayShort[day]} <small>${done}/${list.length}</small></span>`; }).join('')}</div></div>
+  <div class="countdown ${countdown.complete || countdown.unknown ? 'countdown-complete' : ''}" id="live-countdown" aria-label="Contagem regressiva">${countdown.unknown ? '<strong>Quando é o grande dia?</strong><span>Defina a data em "Editar detalhes"</span>' : countdown.complete ? '<strong>O grande dia já aconteceu ♡</strong><span>Atualize a data nos detalhes</span>' : `<div class="count-unit"><strong data-count="days">${countdown.days}</strong><span>dias</span></div><div class="count-unit"><strong data-count="hours">${String(countdown.hours).padStart(2, '0')}</strong><span>horas</span></div><div class="count-unit"><strong data-count="minutes">${String(countdown.minutes).padStart(2, '0')}</strong><span>min</span></div><div class="count-unit"><strong data-count="seconds">${String(countdown.seconds).padStart(2, '0')}</strong><span>seg</span></div>`}</div>
+  <div class="event-actions"><button class="button button-primary" data-go="cronograma">${icon('calendar')} Ver cronograma</button><button class="button button-secondary" data-action="edit-wedding">${icon('settings')} Editar detalhes</button></div></section>
+  <section class="notice-card"><div><strong>${next ? 'Próximo passo' : data.tasks.length ? 'Tudo em dia' : 'Vamos começar?'}</strong><p>${next ? `${esc(next.title)} · ${esc(next.day.replace(' / Dia D', ''))}${next.time ? `, ${esc(next.time)}` : ''}` : data.tasks.length ? 'Todas as tarefas do cronograma foram concluídas. Agora é só aproveitar.' : 'Seu organizador está novinho. Adicione a primeira tarefa do cronograma ou cadastre os convidados.'}</p></div>${next ? `<button class="button button-secondary" data-task-done="${next.id}">Marcar como feita</button>` : data.tasks.length ? '' : `<button class="button button-secondary" data-action="add-task">${icon('plus')} Adicionar tarefa</button>`}</section>
+  <section class="stats-grid">${stat('convidados', 'users', 'Confirmados', confirmedGuests(), `de ${totalGuests()} pessoas na lista`)}${stat('financeiro', 'wallet', 'Total pago', money(spent()), `de ${money(planned())} orçados`)}${stat('financeiro', 'clock', 'Saldo a pagar', money(Math.max(0, planned() - spent())), `${paidRatio}% já quitado`)}${stat('cronograma', 'check', 'Tarefas', `${doneTasks}/${data.tasks.length}`, `${progress()}% do cronograma`)}${stat('checklist', 'box', 'Itens no local', `${onSite}/${data.supplies.length}`, 'do checklist do que levar')}</section>
+  <section class="dashboard-grid"><article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Visão do orçamento</h2><p class="panel-subtitle">Quanto já foi pago e para onde vai o dinheiro</p></div><button class="text-button" data-go="financeiro">Ver detalhes →</button></div><div class="budget-total">${money(spent())}</div><div class="budget-meta"><span>do total de ${money(planned())}</span><span>${paidRatio}% pago</span></div><div class="progress-track"><span style="width:${paidRatio}%"></span></div><div class="legend-row"><span><i class="legend-dot"></i>Valor pago</span><span><i class="legend-dot soft"></i>Restante</span></div><div class="category-list" style="margin-top:22px">${groups.length ? groups.map(x => `<div class="category-row"><span class="category-name">${esc(x.c)}</span><span class="category-value">${money(x.sum)}</span><div class="mini-track"><span style="width:${Math.max(3, Math.round(x.sum / planned() * 100))}%"></span></div></div>`).join('') : empty('Adicione seus primeiros gastos.')}</div></article>
+  <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Próximas tarefas</h2><p class="panel-subtitle">${pending.length} ${pending.length === 1 ? 'tarefa pendente' : 'tarefas pendentes'}</p></div><button class="text-button" data-go="cronograma">Ver cronograma →</button></div><div class="task-list">${tasks.length ? tasks.map(t => `<label class="task-row"><input class="task-check" type="checkbox" data-task-check="${t.id}"><span class="task-text">${esc(t.title)}</span><span class="task-meta">${esc(dayShort[t.day] || t.day)}${t.time ? ` · ${esc(t.time)}` : ''}</span></label>`).join('') : empty(data.tasks.length ? 'Tudo por aqui concluído!' : 'Nenhuma tarefa ainda.')}</div></article></section>`;
 }
 function renderGuests() {
   const visible = data.guests.filter(g => (guestFilter === 'Todos' || g.group === guestFilter) && `${g.name} ${g.phone}`.toLowerCase().includes(guestSearch.toLowerCase()));
   const confirmed = confirmedGuests(), invited = data.guests.filter(g => g.status === 'Enviado').length;
-  return `${heading('LISTA DE CONVIDADOS', 'Pessoas queridas, pertinho.', 'Acompanhe os convites e tenha a lista na ponta dos dedos.', '<button class="button button-secondary" data-action="import-guests">Importar TXT</button><button class="button button-primary" data-action="add-guest">＋ Adicionar convidado</button>')}
+  return `${heading('LISTA DE CONVIDADOS', 'Convidados.', 'Acompanhe os convites e tenha a lista na ponta dos dedos.', '<button class="button button-secondary" data-action="import-guests"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-guest"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar convidado</button>')}
   <div class="summary-row"><span class="summary-chip">Pessoas na lista <strong>${totalGuests()}</strong></span><span class="summary-chip">Confirmadas <strong>${confirmed}</strong></span><span class="summary-chip">Convites enviados <strong>${invited}</strong></span></div>
-  <div class="toolbar"><label class="search-box"><span class="search-mark">⌕</span><input id="guest-search" type="search" placeholder="Buscar por nome ou telefone" value="${esc(guestSearch)}"></label><select id="guest-filter" class="filter-select"><option>Todos</option>${guestGroups.map(g => `<option ${guestFilter === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>
-  <section class="card table-card"><div class="table-wrap"><table><thead><tr><th>Convidado</th><th>Grupo</th><th>Telefone / WhatsApp</th><th>Convite</th><th>Acompanhantes</th><th></th></tr></thead><tbody>${visible.length ? visible.map(g => `<tr><td><div class="person-cell"><span class="person-avatar">${esc(g.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase())}</span><span><span class="person-name">${esc(g.name)}</span><span class="person-sub">${Number(g.children) ? `${g.children} criança(s)` : 'Convidado(a)'}</span></span></div></td><td>${esc(g.group)}</td><td>${esc(g.phone || '—')}</td><td>${badge(g.status)}</td><td>${Number(g.companions || 0)} adulto(s) · ${Number(g.children || 0)} criança(s)</td><td><div class="row-actions"><button data-action="edit-guest" data-id="${g.id}" aria-label="Editar">✎</button><button data-action="delete-guest" data-id="${g.id}" aria-label="Excluir">×</button></div></td></tr>`).join('') : `<tr><td colspan="6">${empty('Nenhum convidado encontrado.')}</td></tr>`}</tbody></table></div><div class="table-footer">Exibindo <strong>${visible.length}</strong> de <strong>${data.guests.length}</strong> convidados · Pessoas confirmadas com acompanhantes: <strong>${confirmed}</strong></div></section>`;
+  <div class="toolbar"><label class="search-box"><span class="search-mark">${icon('search')}</span><input id="guest-search" type="search" placeholder="Buscar por nome ou telefone" value="${esc(guestSearch)}"></label><select id="guest-filter" class="filter-select"><option>Todos</option>${guestGroups.map(g => `<option ${guestFilter === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>
+  <section class="card table-card"><div class="table-wrap"><table><thead><tr><th>Convidado</th><th>Grupo</th><th>Telefone / WhatsApp</th><th>Convite</th><th>Acompanhantes</th><th></th></tr></thead><tbody>${visible.length ? visible.map(g => `<tr><td><div class="person-cell"><span class="person-avatar">${esc(g.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase())}</span><span><span class="person-name">${esc(g.name)}</span><span class="person-sub">${Number(g.children) ? `${g.children} criança(s)` : 'Convidado(a)'}</span></span></div></td><td>${esc(g.group)}</td><td>${esc(g.phone || '—')}</td><td>${badge(g.status)}</td><td>${Number(g.companions || 0)} adulto(s) · ${Number(g.children || 0)} criança(s)</td><td><div class="row-actions"><button data-action="edit-guest" data-id="${g.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-guest" data-id="${g.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`).join('') : `<tr><td colspan="6">${empty('Nenhum convidado encontrado.')}</td></tr>`}</tbody></table></div><div class="table-footer">Exibindo <strong>${visible.length}</strong> de <strong>${data.guests.length}</strong> convidados · Pessoas confirmadas com acompanhantes: <strong>${confirmed}</strong></div></section>`;
 }
 function renderFinance() {
   const allCategories = [...new Set([...expenseCategories, ...data.expenses.map(e => e.category).filter(Boolean)])];
   const categories = expenseFilter === 'Todas' ? allCategories : [expenseFilter];
-  return `${heading('ORÇAMENTO COM TRANSPARÊNCIA', 'O dinheiro também faz parte do plano.', 'Organize os valores com clareza, sem perder a leveza.', '<button class="button button-secondary" data-action="export-finance">Exportar PDF</button><button class="button button-secondary" data-action="import-expenses">Importar TXT</button><button class="button button-primary" data-action="add-expense">＋ Adicionar gasto</button>')}
+  return `${heading('ORÇAMENTO', 'Financeiro.', 'Organize os valores com clareza, sem perder a leveza.', '<button class="button button-secondary" data-action="export-finance"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-secondary" data-action="import-expenses"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-expense"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar gasto</button>')}
   <section class="budget-overview"><article class="card budget-box"><span>Total orçado</span><strong>${money(planned())}</strong><small>Somando todos os itens previstos</small></article><article class="card budget-box"><span>Total pago</span><strong>${money(spent())}</strong><small>Valores já quitados</small></article><article class="card budget-box"><span>Saldo a pagar</span><strong>${money(Math.max(0, planned() - spent()))}</strong><small>Dentro do orçamento ♡</small></article></section>
   <div class="toolbar"><select id="expense-filter" class="filter-select"><option>Todas</option>${allCategories.map(c => `<option ${expenseFilter === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
-  ${categories.map(cat => { const rows = data.expenses.filter(e => e.category === cat); const sum = rows.reduce((a, e) => a + Number(e.planned || 0), 0); return `<section class="category-section"><div class="card category-head" data-collapse="${esc(cat)}"><div><h3>${esc(cat)}</h3><p>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} · previsto ${money(sum)}</p></div><span class="category-total">${rows.length ? money(rows.reduce((a, e) => a + Number(e.paid || 0), 0)) + ' pagos' : '＋'}</span></div><div class="card table-card"><div class="table-wrap"><table><thead><tr><th>Descrição</th><th>Valor previsto</th><th>Valor pago</th><th>Pagamento</th><th></th></tr></thead><tbody>${rows.length ? rows.map(e => `<tr><td><span class="person-name">${esc(e.description)}</span>${e.notes ? `<span class="person-sub">${esc(e.notes)}</span>` : ''}</td><td>${money(e.planned)}</td><td>${money(e.paid)}</td><td>${badge(e.status, e.status.startsWith('Pago') || e.status === 'Presente Ganho' ? 'pago' : 'pendente')}</td><td><div class="row-actions"><button data-action="edit-expense" data-id="${e.id}" aria-label="Editar">✎</button><button data-action="delete-expense" data-id="${e.id}" aria-label="Excluir">×</button></div></td></tr>`).join('') : `<tr><td colspan="5">${empty('Nenhum gasto nesta categoria ainda.')}</td></tr>`}</tbody></table></div></div></section>`; }).join('')}`;
+  ${categories.map(cat => { const rows = data.expenses.filter(e => e.category === cat); const sum = rows.reduce((a, e) => a + Number(e.planned || 0), 0); return `<section class="category-section"><div class="card category-head" data-collapse="${esc(cat)}"><div><h3>${esc(cat)}</h3><p>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} · previsto ${money(sum)}</p></div><span class="category-total">${rows.length ? money(rows.reduce((a, e) => a + Number(e.paid || 0), 0)) + ' pagos' : '＋'}</span></div><div class="card table-card"><div class="table-wrap"><table><thead><tr><th>Descrição</th><th>Valor previsto</th><th>Valor pago</th><th>Pagamento</th><th></th></tr></thead><tbody>${rows.length ? rows.map(e => `<tr><td><span class="person-name">${esc(e.description)}</span>${e.notes ? `<span class="person-sub">${esc(e.notes)}</span>` : ''}</td><td>${money(e.planned)}</td><td>${money(e.paid)}</td><td>${badge(e.status, e.status.startsWith('Pago') || e.status === 'Presente Ganho' ? 'pago' : 'pendente')}</td><td><div class="row-actions"><button data-action="edit-expense" data-id="${e.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-expense" data-id="${e.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`).join('') : `<tr><td colspan="5">${empty('Nenhum gasto nesta categoria ainda.')}</td></tr>`}</tbody></table></div></div></section>`; }).join('')}`;
 }
 function renderCeremony() {
-  const ceremonial = [...data.ceremonial].sort((a, b) => a.time.localeCompare(b.time));
-  return `${heading('UM MOMENTO DE CADA VEZ', 'A cerimônia, do jeitinho de vocês.', 'Organize a ordem de entrada, as músicas e os combinados do grande dia.', '<button class="button button-secondary" data-action="export-ceremonial">PDF da cerimonial</button><button class="button button-secondary" data-action="export-ceremony">Exportar roteiro em PDF</button><button class="button button-secondary" data-action="import-ceremony">Importar TXT</button><button class="button button-primary" data-action="add-ceremony">＋ Adicionar etapa</button>')}
+  return `${heading('UM MOMENTO DE CADA VEZ', 'Cerimônia & músicas.', 'Organize a ordem de entrada, as músicas e os combinados do grande dia.', '<button class="button button-secondary" data-action="export-ceremony"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar roteiro em PDF</button><button class="button button-secondary" data-action="import-ceremony"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-ceremony"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar etapa</button>')}
   <section class="ceremony-print"><header class="print-header"><p class="eyebrow">ROTEIRO DA CERIMÔNIA</p><h1>${esc(data.wedding.couple)}</h1><p>${dateLabel(data.wedding.date)} · ${esc(data.wedding.venue)}</p></header><p class="print-note">Este roteiro é um guia para o cortejo. Obrigada por fazer parte deste momento tão especial!</p>
-  <section class="card table-card ceremony-table"><div class="table-wrap"><table><thead><tr><th>#</th><th>Etapa</th><th>Participantes</th><th>Música · artista</th><th>Orientações</th><th class="no-print"></th></tr></thead><tbody>${data.ceremony.length ? data.ceremony.map((c, i) => `<tr class="ceremony-row"><td><span class="step-index">${String(i + 1).padStart(2, '0')}</span></td><td><strong>${esc(c.step)}</strong></td><td>${esc(c.participants)}</td><td class="music-cell"><div class="music-title">${esc(c.music)}</div><div class="music-artist">${esc(c.artist)}</div></td><td><span class="instructions">${esc(c.notes || '—')}</span></td><td class="no-print"><div class="row-actions"><button data-action="edit-ceremony" data-id="${c.id}" aria-label="Editar">✎</button><button data-action="delete-ceremony" data-id="${c.id}" aria-label="Excluir">×</button></div></td></tr>`).join('') : `<tr><td colspan="6">${empty('Adicione as etapas da cerimônia.')}</td></tr>`}</tbody></table></div></section><section class="card print-note orientation-note"><h2>Orientações para os Padrinhos e Auxiliares</h2><ul><li>Evitem levar celular e chaves nos bolsos durante a cerimônia.</li><li>Caminhem em ritmo tranquilo, mantendo espaço entre os casais.</li><li>Sigam o posicionamento combinado e cumprimentem os noivos com calma no altar.</li></ul></section></section><section class="ceremonial-section"><div class="section-heading"><div><p class="eyebrow">DIA DO CASAMENTO</p><h2>Cronograma da cerimonial</h2><p>Sequência operacional para conduzir o dia com segurança.</p></div><button class="button button-primary" data-action="add-ceremonial">＋ Adicionar horário</button></div><article class="card ceremonial-card">${ceremonial.map(item => `<div class="ceremonial-row ${item.status === 'Concluído' ? 'is-complete' : ''}"><time>${esc(item.time)}</time><span class="ceremonial-dot"></span><div><strong>${esc(item.title)}</strong><p>${esc(item.details || 'Sem observações')}</p><small>Responsável: ${esc(item.responsible || 'A definir')}</small></div><input class="supply-check ceremonial-check" type="checkbox" data-ceremonial-check="${item.id}" ${item.status === 'Conclu\u00eddo' ? 'checked' : ''} aria-label="Marcar ${esc(item.title)} como concluida"><div class="row-actions"><button data-action="edit-ceremonial" data-id="${item.id}" aria-label="Editar">✎</button><button data-action="delete-ceremonial" data-id="${item.id}" aria-label="Excluir">×</button></div></div>`).join('')}</article></section>`;
+  <section class="card table-card ceremony-table"><div class="table-wrap"><table><thead><tr><th>#</th><th>Etapa</th><th>Participantes</th><th>Música · artista</th><th>Orientações</th><th class="no-print"></th></tr></thead><tbody>${data.ceremony.length ? data.ceremony.map((c, i) => `<tr class="ceremony-row"><td><span class="step-index">${String(i + 1).padStart(2, '0')}</span></td><td><strong>${esc(c.step)}</strong></td><td>${esc(c.participants)}</td><td class="music-cell"><div class="music-title">${esc(c.music)}</div><div class="music-artist">${esc(c.artist)}</div></td><td><span class="instructions">${esc(c.notes || '—')}</span></td><td class="no-print"><div class="row-actions"><button data-action="edit-ceremony" data-id="${c.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-ceremony" data-id="${c.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`).join('') : `<tr><td colspan="6">${empty('Adicione as etapas da cerimônia.')}</td></tr>`}</tbody></table></div></section><section class="card print-note orientation-note"><h2>Orientações para os Padrinhos e Auxiliares</h2><ul><li>Evitem levar celular e chaves nos bolsos durante a cerimônia.</li><li>Caminhem em ritmo tranquilo, mantendo espaço entre os casais.</li><li>Sigam o posicionamento combinado e cumprimentem os noivos com calma no altar.</li></ul></section></section>`;
+}
+function renderCeremonial() {
+  const ceremonial = [...data.ceremonial].sort((a, b) => a.time.localeCompare(b.time)), done = ceremonial.filter(item => item.status === 'Concluído').length;
+  return `${heading('DIA DO CASAMENTO', 'Cerimonial do dia D.', 'Sequência operacional para conduzir o dia com segurança.', '<button class="button button-secondary" data-action="export-ceremonial"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-primary" data-action="add-ceremonial"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar horário</button>')}<div class="summary-row"><span class="summary-chip">Horários <strong>${ceremonial.length}</strong></span><span class="summary-chip">Concluídos <strong>${done}</strong></span><span class="summary-chip">A fazer <strong>${ceremonial.length - done}</strong></span><span class="summary-chip">Início da cerimônia <strong>${esc(data.wedding.time || '11:30')}</strong></span></div>
+  <article class="card ceremonial-card">${ceremonial.length ? ceremonial.map(item => `<div class="ceremonial-row ${item.status === 'Concluído' ? 'is-complete' : ''}"><time>${esc(item.time)}</time><span class="ceremonial-dot"></span><div><strong>${esc(item.title)}</strong><p>${esc(item.details || 'Sem observações')}</p><small>Responsável: ${esc(item.responsible || 'A definir')}</small></div><input class="supply-check ceremonial-check" type="checkbox" data-ceremonial-check="${item.id}" ${item.status === 'Conclu\u00eddo' ? 'checked' : ''} aria-label="Marcar ${esc(item.title)} como concluida"><div class="row-actions"><button data-action="edit-ceremonial" data-id="${item.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-ceremonial" data-id="${item.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('') : empty('Adicione os horários do dia do casamento.')}</article>`;
 }
 function renderChecklist() {
   const done = data.supplies.filter(s => s.status === 'No Local').length;
   const allCategories = [...new Set([...checklistCategories, ...data.supplies.map(s => s.category).filter(Boolean)])];
-  return `${heading('PREPARAR COM CARINHO', 'Tudo que vai com vocês.', 'Uma lista compartilhada para cada item chegar ao lugar certo.', '<button class="button button-secondary" data-action="export-checklist">Exportar checklist PDF</button><button class="button button-secondary" data-action="import-supplies">Importar TXT</button><button class="button button-primary" data-action="add-supply">＋ Adicionar item</button>')}<div class="summary-row"><span class="summary-chip">Itens no checklist <strong>${data.supplies.length}</strong></span><span class="summary-chip">Já no local <strong>${done}</strong></span><span class="summary-chip">Em andamento <strong>${data.supplies.filter(s => ['Comprado', 'No Carro'].includes(s.status)).length}</strong></span></div>
-  <section class="check-categories">${allCategories.map(cat => { const items = data.supplies.filter(s => s.category === cat); return `<article class="card check-card"><header class="check-head"><h3>${esc(cat)}</h3><span>${items.filter(i => i.status === 'No Local').length} / ${items.length} no local</span></header><div class="check-items">${items.length ? items.map(s => `<div class="check-item ${s.status === 'No Local' ? 'is-complete' : ''}"><span class="task-text">${esc(s.name)}${s.quantity ? `<span class="person-sub">${esc(s.quantity)}</span>` : ''}</span><div class="check-actions"><label class="supply-check-label"><input class="supply-check" type="checkbox" data-supply-check="${s.id}" ${s.status === 'No Local' ? 'checked' : ''} aria-label="Marcar ${esc(s.name)} como no local"><span>No local</span></label><select class="status-select" data-supply-status="${s.id}" aria-label="Status de ${esc(s.name)}">${checklistStatuses.map(st => `<option ${s.status === st ? 'selected' : ''}>${st}</option>`).join('')}</select><div class="row-actions"><button data-action="edit-supply" data-id="${s.id}" aria-label="Editar">✎</button><button data-action="delete-supply" data-id="${s.id}" aria-label="Excluir">×</button></div></div></div>`).join('') : empty('Nenhum item nesta categoria.')}</div></article>`; }).join('')}</section>`;
+  return `${heading('PREPARAR COM CARINHO', 'O que levar.', 'Uma lista compartilhada para cada item chegar ao lugar certo.', '<button class="button button-secondary" data-action="export-checklist"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar checklist PDF</button><button class="button button-secondary" data-action="import-supplies"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-supply"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar item</button>')}<div class="summary-row"><span class="summary-chip">Itens no checklist <strong>${data.supplies.length}</strong></span><span class="summary-chip">Já no local <strong>${done}</strong></span><span class="summary-chip">Em andamento <strong>${data.supplies.filter(s => ['Comprado', 'No Carro'].includes(s.status)).length}</strong></span></div>
+  <section class="check-categories">${allCategories.map(cat => { const items = data.supplies.filter(s => s.category === cat); return `<article class="card check-card"><header class="check-head"><h3>${esc(cat)}</h3><span>${items.filter(i => i.status === 'No Local').length} / ${items.length} no local</span></header><div class="check-items">${items.length ? items.map(s => `<div class="check-item ${s.status === 'No Local' ? 'is-complete' : ''}"><span class="task-text">${esc(s.name)}${s.quantity ? `<span class="person-sub">${esc(s.quantity)}</span>` : ''}</span><div class="check-actions"><label class="supply-check-label"><input class="supply-check" type="checkbox" data-supply-check="${s.id}" ${s.status === 'No Local' ? 'checked' : ''} aria-label="Marcar ${esc(s.name)} como no local"><span>No local</span></label><select class="status-select" data-supply-status="${s.id}" aria-label="Status de ${esc(s.name)}">${checklistStatuses.map(st => `<option ${s.status === st ? 'selected' : ''}>${st}</option>`).join('')}</select><div class="row-actions"><button data-action="edit-supply" data-id="${s.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-supply" data-id="${s.id}" aria-label="Excluir">${icon('trash')}</button></div></div></div>`).join('') : empty('Nenhum item nesta categoria.')}</div></article>`; }).join('')}</section>`;
 }
 function renderTimeline() {
   const days = ['Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado / Dia D'];
-  return `${heading('CONTAGEM REGRESSIVA', 'A semana do sim.', 'Cada tarefa no seu tempo — e espaço para curtir o caminho.', '<button class="button button-secondary" data-action="export-timeline">Exportar cronograma PDF</button><button class="button button-primary" data-action="add-task">＋ Nova tarefa</button>')}<div class="summary-row"><span class="summary-chip">Tarefas no total <strong>${data.tasks.length}</strong></span><span class="summary-chip">Concluídas <strong>${data.tasks.filter(t => t.status === 'Concluído').length}</strong></span><span class="summary-chip">A fazer <strong>${data.tasks.filter(t => t.status !== 'Concluído').length}</strong></span></div>
-  ${days.map(day => { const tasks = data.tasks.filter(t => t.day === day).sort((a, b) => a.time.localeCompare(b.time)); return `<section class="day-section"><h2 class="day-title">${esc(day)} <span>${tasks.length} ${tasks.length === 1 ? 'tarefa' : 'tarefas'}</span></h2><article class="card day-tasks">${tasks.length ? tasks.map(t => `<div class="timeline-row"><span class="timeline-time">${esc(t.time || '—')}</span><span class="timeline-mark"></span><div><div class="timeline-title">${esc(t.title)}</div><div class="timeline-desc">${esc(t.description || '')}</div></div><div style="display:flex;gap:6px;align-items:center"><select class="status-select" data-task-status="${t.id}" aria-label="Status de ${esc(t.title)}">${taskStatuses.map(s => `<option ${t.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select><div class="row-actions"><button data-action="edit-task" data-id="${t.id}" aria-label="Editar">✎</button><button data-action="delete-task" data-id="${t.id}" aria-label="Excluir">×</button></div></div></div>`).join('') : empty('Sem tarefas planejadas para este dia.')}</article></section>`; }).join('')}`;
+  return `${heading('A SEMANA DO SIM', 'Cronograma.', 'Cada tarefa no seu tempo — e espaço para curtir o caminho.', '<button class="button button-secondary" data-action="export-timeline"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar cronograma PDF</button><button class="button button-primary" data-action="add-task"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa</button>')}<div class="summary-row"><span class="summary-chip">Tarefas no total <strong>${data.tasks.length}</strong></span><span class="summary-chip">Concluídas <strong>${data.tasks.filter(t => t.status === 'Concluído').length}</strong></span><span class="summary-chip">A fazer <strong>${data.tasks.filter(t => t.status !== 'Concluído').length}</strong></span></div>
+  ${days.map(day => { const tasks = data.tasks.filter(t => t.day === day).sort((a, b) => a.time.localeCompare(b.time)); return `<section class="day-section"><h2 class="day-title">${esc(day)} <span>${tasks.length} ${tasks.length === 1 ? 'tarefa' : 'tarefas'}</span></h2><article class="card day-tasks">${tasks.length ? tasks.map(t => `<div class="timeline-row"><span class="timeline-time">${esc(t.time || '—')}</span><span class="timeline-mark"></span><div><div class="timeline-title">${esc(t.title)}</div><div class="timeline-desc">${esc(t.description || '')}</div></div><div class="timeline-side"><select class="status-select" data-task-status="${t.id}" aria-label="Status de ${esc(t.title)}">${taskStatuses.map(s => `<option ${t.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select><div class="row-actions"><button data-action="edit-task" data-id="${t.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-task" data-id="${t.id}" aria-label="Excluir">${icon('trash')}</button></div></div></div>`).join('') : empty('Sem tarefas planejadas para este dia.')}</article></section>`; }).join('')}`;
 }
 function renderNotes() {
   const notes = [...data.notes].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-  const action = '<button class="button button-primary" data-action="add-note">＋ Nova anotação</button>';
-  return `${heading('SUAS IDEIAS', 'Anotações', 'Guarde ideias, lembretes e detalhes importantes do planejamento.', action)}
-  <section class="notes-grid">${notes.length ? notes.map(note => `<article class="card note-card"><div class="note-card-head"><span class="note-card-icon" aria-hidden="true">✎</span><div class="row-actions"><button data-action="edit-note" data-id="${esc(note.id)}" aria-label="Editar anotação">✎</button><button data-action="delete-note" data-id="${esc(note.id)}" aria-label="Excluir anotação">×</button></div></div><h2>${esc(note.title)}</h2><div class="note-content">${renderNoteContent(note.content)}</div><small>${note.updatedAt ? `Atualizada em ${new Date(note.updatedAt).toLocaleDateString('pt-BR')}` : 'Anotação'}</small></article>`).join('') : `<article class="card notes-empty"><span class="empty-mark" aria-hidden="true">✎</span><h2>Nenhuma anotação por enquanto</h2><p>Crie uma anotação para registrar ideias e lembretes do casamento.</p><button class="button button-secondary" data-action="add-note">＋ Criar primeira anotação</button></article>`}</section>`;
+  const action = '<button class="button button-primary" data-action="add-note"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nova anotação</button>';
+  return `${heading('SUAS IDEIAS', 'Anotações.', 'Guarde ideias, lembretes e detalhes importantes do planejamento.', action)}
+  <section class="notes-grid">${notes.length ? notes.map(note => `<article class="card note-card"><div class="note-card-head"><span class="note-card-icon" aria-hidden="true">${icon('note')}</span><div class="row-actions"><button data-action="edit-note" data-id="${esc(note.id)}" aria-label="Editar anotação">${icon('edit')}</button><button data-action="delete-note" data-id="${esc(note.id)}" aria-label="Excluir anotação">${icon('trash')}</button></div></div><h2>${esc(note.title)}</h2><div class="note-content">${renderNoteContent(note.content)}</div><small>${note.updatedAt ? `Atualizada em ${new Date(note.updatedAt).toLocaleDateString('pt-BR')}` : 'Anotação'}</small></article>`).join('') : `<article class="card notes-empty"><span class="empty-mark" aria-hidden="true">${icon('note')}</span><h2>Nenhuma anotação por enquanto</h2><p>Crie uma anotação para registrar ideias e lembretes do casamento.</p><button class="button button-secondary" data-action="add-note"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Criar primeira anotação</button></article>`}</section>`;
 }
 
 
@@ -386,7 +410,7 @@ function pdfFooter(doc) { const pages = doc.getNumberOfPages(); for (let i = 1; 
 function exportCeremonyPdf() {
   const doc = pdfBase('Roteiro completo da cerimônia'); if (!doc) return;
   pdfHeading(doc, 'Roteiro da cerimônia e cortejo', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}  •  Início às ${data.wedding.time || '11:30'}`);
-  doc.autoTable({ startY: 36, head: [['Ordem', 'Entrada', 'Participantes', 'Música selecionada', 'Posicionamento / observações']], body: data.ceremony.map((c, i) => [String(i + 1).padStart(2, '0'), c.step, c.participants, [c.music, c.artist].filter(Boolean).join(' — '), c.notes || '—']), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15, overflow: 'linebreak' }, headStyles: { fillColor: [69, 91, 75], textColor: 255, fontStyle: 'bold' }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 45 }, 2: { cellWidth: 52 }, 3: { cellWidth: 62 } } });
+  doc.autoTable({ startY: 36, head: [['Ordem', 'Entrada', 'Participantes', 'Música selecionada', 'Posicionamento / observações']], body: data.ceremony.map((c, i) => [String(i + 1).padStart(2, '0'), c.step, c.participants, [c.music, c.artist].filter(Boolean).join(' — '), c.notes || '—']), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15, overflow: 'linebreak' }, headStyles: { fillColor: [95, 107, 42], textColor: 255, fontStyle: 'bold' }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 45 }, 2: { cellWidth: 52 }, 3: { cellWidth: 62 } } });
   let y = (doc.lastAutoTable?.finalY || 40) + 9; if (y > 160) { doc.addPage(); y = 20; }
   doc.setFillColor(241, 244, 239); doc.roundedRect(14, y, 269, 29, 2, 2, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(48, 69, 54); doc.text('Orientações para os Padrinhos e Auxiliares', 19, y + 7);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(55); doc.text(['• Evitem levar celular e chaves nos bolsos durante a cerimônia.', '• Caminhem em ritmo tranquilo, mantendo espaço entre os casais.', '• Sigam o posicionamento combinado e cumprimentem os noivos com calma no altar.'], 19, y + 14, { lineHeightFactor: 1.4 });
@@ -396,7 +420,7 @@ function exportCeremonialPdf() {
   const doc = pdfBase('Cronograma da cerimonial'); if (!doc) return;
   pdfHeading(doc, 'Cronograma da cerimonial — Dia D', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(55); doc.text(`Início da cerimônia: ${data.wedding.time || '11:30'}`, 14, 39);
-  doc.autoTable({ startY: 46, head: [['Horário', 'Atividade', 'Responsável', 'Orientações', 'Status']], body: [...data.ceremonial].sort((a, b) => a.time.localeCompare(b.time)).map(item => [item.time, item.title, item.responsible || 'A definir', item.details || '—', item.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15, overflow: 'linebreak' }, headStyles: { fillColor: [69, 91, 75], textColor: 255, fontStyle: 'bold' }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 23 }, 1: { cellWidth: 62 }, 2: { cellWidth: 48 }, 4: { cellWidth: 18 } }, didParseCell: cell => { if (cell.section === 'body' && cell.column.index === 4) cell.cell.text = ['']; }, didDrawCell: cell => { if (cell.section === 'body' && cell.column.index === 4) { const size = 4.5, x = cell.cell.x + (cell.cell.width - size) / 2, y = cell.cell.y + (cell.cell.height - size) / 2; doc.setDrawColor(100); doc.setLineWidth(.35); doc.rect(x, y, size, size); if (cell.row.raw[4] === 'Conclu\u00eddo') { doc.setDrawColor(45, 90, 67); doc.setLineWidth(.8); doc.line(x + .8, y + 2.3, x + 1.8, y + 3.2); doc.line(x + 1.8, y + 3.2, x + 3.8, y + 1.1); } } } });
+  doc.autoTable({ startY: 46, head: [['Horário', 'Atividade', 'Responsável', 'Orientações', 'Status']], body: [...data.ceremonial].sort((a, b) => a.time.localeCompare(b.time)).map(item => [item.time, item.title, item.responsible || 'A definir', item.details || '—', item.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15, overflow: 'linebreak' }, headStyles: { fillColor: [95, 107, 42], textColor: 255, fontStyle: 'bold' }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 23 }, 1: { cellWidth: 62 }, 2: { cellWidth: 48 }, 4: { cellWidth: 18 } }, didParseCell: cell => { if (cell.section === 'body' && cell.column.index === 4) cell.cell.text = ['']; }, didDrawCell: cell => { if (cell.section === 'body' && cell.column.index === 4) { const size = 4.5, x = cell.cell.x + (cell.cell.width - size) / 2, y = cell.cell.y + (cell.cell.height - size) / 2; doc.setDrawColor(100); doc.setLineWidth(.35); doc.rect(x, y, size, size); if (cell.row.raw[4] === 'Conclu\u00eddo') { doc.setDrawColor(45, 90, 67); doc.setLineWidth(.8); doc.line(x + .8, y + 2.3, x + 1.8, y + 3.2); doc.line(x + 1.8, y + 3.2, x + 3.8, y + 1.1); } } } });
   pdfFooter(doc); doc.save('cronograma-cerimonial-dia-d.pdf'); notify('Cronograma da cerimonial exportado em PDF.');
 }
 function exportFinancePdf() {
@@ -404,15 +428,15 @@ function exportFinancePdf() {
   pdfHeading(doc, 'Relatório financeiro', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
   const paid = data.expenses.reduce((sum, e) => sum + Number(e.paid || 0), 0);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(45); doc.text(`Total orçado: ${money(planned())}     Total pago: ${money(paid)}     Saldo pendente: ${money(Math.max(0, planned() - paid))}`, 14, 39);
-  doc.autoTable({ startY: 46, head: [['Categoria', 'Fornecedor / item', 'Valor previsto', 'Valor pago', 'Status']], body: data.expenses.map(e => [e.category, e.description, money(e.planned), money(e.paid), e.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [69, 91, 75], textColor: 255 }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 66 }, 1: { cellWidth: 80 }, 2: { halign: 'right' }, 3: { halign: 'right' } } });
+  doc.autoTable({ startY: 46, head: [['Categoria', 'Fornecedor / item', 'Valor previsto', 'Valor pago', 'Status']], body: data.expenses.map(e => [e.category, e.description, money(e.planned), money(e.paid), e.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 66 }, 1: { cellWidth: 80 }, 2: { halign: 'right' }, 3: { halign: 'right' } } });
   pdfFooter(doc); doc.save('relatorio-financeiro.pdf'); notify('Relatório financeiro exportado em PDF.');
 }
 function exportChecklistPdf() {
   const doc = pdfBase('Checklist e cronograma do Dia D'); if (!doc) return;
   pdfHeading(doc, 'Checklist físico para o Dia D', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
-  doc.autoTable({ startY: 36, head: [['', 'Categoria', 'Item', 'Quantidade / observação', 'Status']], body: data.supplies.map(s => ['', s.category, s.name, s.quantity || '', s.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [69, 91, 75], textColor: 255 }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 58 }, 2: { cellWidth: 74 }, 3: { cellWidth: 72 } }, didDrawCell: data => { if (data.section === 'body' && data.column.index === 0) { doc.setDrawColor(90); doc.rect(data.cell.x + 3, data.cell.y + 2.5, 4, 4); } } });
+  doc.autoTable({ startY: 36, head: [['', 'Categoria', 'Item', 'Quantidade / observação', 'Status']], body: data.supplies.map(s => ['', s.category, s.name, s.quantity || '', s.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 58 }, 2: { cellWidth: 74 }, 3: { cellWidth: 72 } }, didDrawCell: data => { if (data.section === 'body' && data.column.index === 0) { doc.setDrawColor(90); doc.rect(data.cell.x + 3, data.cell.y + 2.5, 4, 4); } } });
   doc.addPage(); pdfHeading(doc, 'Cronograma e responsáveis', `${data.wedding.couple}  •  Dia da montagem e cerimônia`);
-  doc.autoTable({ startY: 36, head: [['Dia', 'Horário', 'Tarefa', 'Responsável', 'Detalhes / andamento']], body: [...data.tasks].sort((a, b) => a.day.localeCompare(b.day) || a.time.localeCompare(b.time)).map(t => [t.day, t.time || '—', t.title, t.responsible || 'A definir', [t.description, t.status].filter(Boolean).join(' · ')]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [69, 91, 75], textColor: 255 }, rowPageBreak: 'avoid' });
+  doc.autoTable({ startY: 36, head: [['Dia', 'Horário', 'Tarefa', 'Responsável', 'Detalhes / andamento']], body: [...data.tasks].sort((a, b) => a.day.localeCompare(b.day) || a.time.localeCompare(b.time)).map(t => [t.day, t.time || '—', t.title, t.responsible || 'A definir', [t.description, t.status].filter(Boolean).join(' · ')]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, rowPageBreak: 'avoid' });
   pdfFooter(doc); doc.save('checklist-e-cronograma.pdf'); notify('Checklist e cronograma exportados em PDF.');
 }
 function exportTimelinePdf() {
@@ -421,7 +445,7 @@ function exportTimelinePdf() {
   const completed = data.tasks.filter(task => task.status === 'Concluído').length;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(55);
   doc.text(`Tarefas: ${data.tasks.length}     Concluídas: ${completed}     Em aberto: ${data.tasks.length - completed}`, 14, 39);
-  doc.autoTable({ startY: 46, head: [['Dia', 'Horário', 'Tarefa', 'Responsável', 'Detalhes', 'Andamento']], body: [...data.tasks].sort((a, b) => a.day.localeCompare(b.day) || a.time.localeCompare(b.time)).map(task => [task.day, task.time || '—', task.title, task.responsible || 'A definir', task.description || '—', task.status || 'A Fazer']), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15, overflow: 'linebreak' }, headStyles: { fillColor: [69, 91, 75], textColor: 255, fontStyle: 'bold' }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 19 }, 2: { cellWidth: 55 }, 3: { cellWidth: 42 }, 5: { cellWidth: 27 } } });
+  doc.autoTable({ startY: 46, head: [['Dia', 'Horário', 'Tarefa', 'Responsável', 'Detalhes', 'Andamento']], body: [...data.tasks].sort((a, b) => a.day.localeCompare(b.day) || a.time.localeCompare(b.time)).map(task => [task.day, task.time || '—', task.title, task.responsible || 'A definir', task.description || '—', task.status || 'A Fazer']), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15, overflow: 'linebreak' }, headStyles: { fillColor: [95, 107, 42], textColor: 255, fontStyle: 'bold' }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 19 }, 2: { cellWidth: 55 }, 3: { cellWidth: 42 }, 5: { cellWidth: 27 } } });
   pdfFooter(doc); doc.save('cronograma-casamento.pdf'); notify('Cronograma exportado em PDF.');
 }
 function bindPageEvents() {
@@ -454,6 +478,7 @@ function bindPageEvents() {
     if (action === 'import-ceremony') openImport('ceremony');
   }));
   $('#page-content').querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => setPage(b.dataset.go)));
+  $('#page-content').querySelectorAll('[data-task-done]').forEach(button => button.addEventListener('click', () => { const task = data.tasks.find(t => t.id === button.dataset.taskDone); if (task) { task.status = 'Concluído'; save('Tarefa concluída.', false); render(); } }));
   $('#page-content').querySelectorAll('[data-task-check]').forEach(input => input.addEventListener('change', () => { const task = data.tasks.find(t => t.id === input.dataset.taskCheck); if (task) { task.status = input.checked ? 'Concluído' : 'A Fazer'; animateStatusChange(input, input.checked ? 'Tarefa concluída.' : 'Tarefa reaberta.', input.checked); } }));
   $('#page-content').querySelectorAll('[data-supply-check]').forEach(input => input.addEventListener('change', () => { const item = data.supplies.find(s => s.id === input.dataset.supplyCheck); if (item) { item.status = input.checked ? 'No Local' : 'Pendente'; animateStatusChange(input, input.checked ? 'Item chegou ao local.' : 'Item voltou para pendente.', input.checked); } }));
   $('#page-content').querySelectorAll('[data-task-status]').forEach(select => select.addEventListener('change', () => { const task = data.tasks.find(t => t.id === select.dataset.taskStatus); if (task) { task.status = select.value; animateStatusChange(select, 'Status da tarefa atualizado.', select.value === 'Concluído'); } }));
@@ -467,6 +492,92 @@ function bindPageEvents() {
 
 document.querySelectorAll('.nav-item[data-page]').forEach(button => button.addEventListener('click', () => setPage(button.dataset.page)));
 $('#mobile-menu').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+$('#quick-add').addEventListener('click', () => addOrEdit('task'));
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  $('#sidebar-toggle').setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+  $('#sidebar-toggle .nav-text').textContent = collapsed ? 'Expandir' : 'Recolher';
+  try { localStorage.setItem('entre-nos-sidebar', collapsed ? 'collapsed' : 'open'); } catch {}
+}
+$('#sidebar-toggle').addEventListener('click', () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed')));
+try { if (localStorage.getItem('entre-nos-sidebar') === 'collapsed') setSidebarCollapsed(true); } catch {}
+
+const guideSteps = [
+  { title: 'Bem-vindos ao Entre Nós ♡', text: 'Este é o espaço de vocês para organizar o casamento. Em poucos passos mostramos onde fica cada coisa. Tudo o que vocês fizerem é salvo automaticamente na conta.' },
+  { page: 'inicio', target: '.event-card', title: 'O grande dia', text: 'Aqui ficam o casal, o local, a data e a contagem regressiva. As pílulas Qua, Qui, Sex e Sáb mostram quantas tarefas de cada dia já foram feitas. Use "Editar detalhes" para mudar data, horário ou local.' },
+  { page: 'inicio', target: '.notice-card', title: 'Próximo passo', text: 'Mostra a próxima tarefa pendente do cronograma. Terminou? Clique em "Marcar como feita" e o painel já mostra a seguinte.' },
+  { page: 'inicio', target: '.stats-grid', title: 'Resumo em números', text: 'Convidados confirmados, quanto já foi pago, o saldo, as tarefas e os itens no local. Clique em qualquer card para abrir a página correspondente.' },
+  { page: 'cronograma', target: '.nav-item[data-page="cronograma"]', title: 'Cronograma', text: 'As tarefas da semana do casamento, separadas por dia e horário. Mude o status de cada uma (A fazer, Em andamento, Concluído) e exporte tudo em PDF.' },
+  { page: 'checklist', target: '.nav-item[data-page="checklist"]', title: 'O que levar', text: 'A lista do que precisa chegar ao local, por categoria. Acompanhe cada item como Pendente, Comprado, No carro ou No local, e marque "No local" quando ele chegar.' },
+  { page: 'anotacoes', target: '.nav-item[data-page="anotacoes"]', title: 'Anotações', text: 'Guarde ideias, links e lembretes. O editor aceita negrito, itálico, listas e links.' },
+  { page: 'convidados', target: '.nav-item[data-page="convidados"]', title: 'Convidados', text: 'Cadastre cada convidado com grupo, telefone, acompanhantes e status do convite. Busque por nome, filtre por grupo ou importe uma lista pronta em TXT.' },
+  { page: 'cerimonia', target: '.nav-item[data-page="cerimonia"]', title: 'Cerimônia & músicas', text: 'Monte a ordem de entrada do cortejo com participantes, músicas e orientações. Exporte o roteiro em PDF para os padrinhos.' },
+  { page: 'cerimonial', target: '.nav-item[data-page="cerimonial"]', title: 'Cerimonial do dia D', text: 'O passo a passo do dia, com horários e responsáveis. Marque cada horário como concluído e exporte em PDF para a equipe.' },
+  { page: 'financeiro', target: '.nav-item[data-page="financeiro"]', title: 'Financeiro', text: 'Registre os gastos por categoria, com valor previsto, valor pago e forma de pagamento. Clique numa categoria para abrir ou recolher. Também dá para importar TXT e exportar PDF.' },
+  { target: '#quick-add', title: 'Nova tarefa', text: 'Atalho para criar uma tarefa no cronograma a partir de qualquer página.' },
+  { target: '#edit-wedding', title: 'Detalhes do casamento', text: 'Altere os nomes do casal, a data, o horário e o local. A contagem regressiva se atualiza na hora.' },
+  { page: 'inicio', target: '#guide-button', title: 'Sempre que precisar', text: 'O guia fica guardado neste botão para vocês reverem quando quiserem. Bom planejamento ♡' },
+];
+let guideIndex = 0, guideTimer;
+const guideKey = () => `entre-nos-guia-visto-${activeUser?.uid || 'local'}`;
+function guideSeen() { try { return localStorage.getItem(guideKey()) === 'sim'; } catch { return false; } }
+function startGuide() {
+  guideIndex = 0; $('#guide').hidden = false;
+  $('#guide-dots').innerHTML = guideSteps.map(() => '<span></span>').join('');
+  raiseInteractiveCursor(); showGuideStep();
+}
+function closeGuide() {
+  $('#guide').hidden = true; $('#sidebar').classList.remove('open'); clearTimeout(guideTimer);
+  try { localStorage.setItem(guideKey(), 'sim'); } catch {}
+}
+function showGuideStep() {
+  const step = guideSteps[guideIndex], last = guideIndex === guideSteps.length - 1;
+  if (step.page && step.page !== currentPage) setPage(step.page);
+  const target = step.target && $(step.target);
+  $('#sidebar').classList.toggle('open', Boolean(target?.closest('#sidebar')) && window.innerWidth <= 760);
+  $('#guide-step').textContent = `GUIA · ${guideIndex + 1} DE ${guideSteps.length}`;
+  $('#guide-title').textContent = step.title; $('#guide-text').textContent = step.text;
+  $('#guide-prev').hidden = guideIndex === 0;
+  $('#guide-next').textContent = last ? 'Concluir' : guideIndex === 0 ? 'Começar' : 'Próximo';
+  $('#guide-skip').hidden = last;
+  $('#guide-dots').querySelectorAll('span').forEach((dot, i) => { dot.classList.toggle('active', i === guideIndex); dot.classList.toggle('done', i < guideIndex); });
+  const card = $('#guide-card'); card.classList.remove('guide-pop'); void card.offsetWidth; card.classList.add('guide-pop');
+  if (target && !target.closest('#sidebar, .topbar')) target.scrollIntoView({ block: 'center' });
+  placeGuide(); requestAnimationFrame(placeGuide);
+  clearTimeout(guideTimer); guideTimer = setTimeout(placeGuide, 450);
+  $('#guide-next').focus();
+}
+function placeGuide() {
+  if ($('#guide').hidden) return;
+  const step = guideSteps[guideIndex], target = step.target && $(step.target), spot = $('#guide-spot'), card = $('#guide-card');
+  $('#guide').classList.toggle('is-center', !target);
+  const vw = window.innerWidth, vh = window.innerHeight, gap = 16, pad = 6, cw = card.offsetWidth, ch = card.offsetHeight;
+  const clamp = (value, max) => Math.max(12, Math.min(value, max - 12));
+  if (!target) {
+    Object.assign(spot.style, { top: `${vh / 2}px`, left: `${vw / 2}px`, width: '0px', height: '0px' });
+    Object.assign(card.style, { top: `${(vh - ch) / 2}px`, left: `${(vw - cw) / 2}px` });
+    return;
+  }
+  const r = target.getBoundingClientRect();
+  Object.assign(spot.style, { top: `${r.top - pad}px`, left: `${r.left - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+  let top, left;
+  if (vw <= 760) { left = (vw - cw) / 2; top = r.bottom + gap + ch < vh ? r.bottom + gap : r.top - gap - ch > 0 ? r.top - gap - ch : vh - ch - 12; }
+  else if (r.right + gap + cw < vw - 12 && r.width < vw / 2) { left = r.right + gap; top = r.top + r.height / 2 - ch / 2; }
+  else if (r.bottom + gap + ch < vh - 12) { top = r.bottom + gap; left = r.left + r.width - cw; }
+  else { top = r.top - gap - ch; left = r.left + r.width - cw; }
+  Object.assign(card.style, { top: `${clamp(top, vh - ch)}px`, left: `${clamp(left, vw - cw)}px` });
+}
+$('#guide-button').addEventListener('click', startGuide);
+$('#guide-next').addEventListener('click', () => { if (guideIndex === guideSteps.length - 1) { closeGuide(); notify('Guia concluído. Ele fica no botão "Guia".'); } else { guideIndex++; showGuideStep(); } });
+$('#guide-prev').addEventListener('click', () => { if (guideIndex > 0) { guideIndex--; showGuideStep(); } });
+$('#guide-skip').addEventListener('click', () => { closeGuide(); notify('Você pode rever o guia no botão "Guia".'); });
+window.addEventListener('resize', placeGuide);
+document.addEventListener('keydown', event => {
+  if ($('#guide').hidden) return;
+  if (event.key === 'Escape') closeGuide();
+  if (event.key === 'ArrowRight') $('#guide-next').click();
+  if (event.key === 'ArrowLeft' && guideIndex > 0) $('#guide-prev').click();
+});
 $('#edit-wedding').addEventListener('click', () => openModal('Detalhes do casamento', recordForm('wedding'), values => { data.wedding = values; save('Detalhes do casamento atualizados.'); render(); }));
 $('#modal-close').addEventListener('click', () => $('#modal').close());
 $('#modal-cancel').addEventListener('click', () => $('#modal').close());
@@ -492,40 +603,29 @@ function initInteractiveCursor() {
   follow();
 }
 initInteractiveCursor();
-$('#today-date').textContent = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
-$('#auth-toggle').addEventListener('click', () => {
-  authMode = authMode === 'signin' ? 'signup' : 'signin';
-  $('#auth-heading').textContent = authMode === 'signin' ? 'Acesse seu planejamento' : 'Crie sua conta';
-  $('#auth-description').textContent = authMode === 'signin' ? 'Entre com sua conta para acessar os dados em qualquer dispositivo.' : 'Use a mesma conta nos dispositivos que vão compartilhar este planejamento.';
-  $('#auth-submit').textContent = authMode === 'signin' ? 'Entrar' : 'Criar conta';
-  $('#auth-toggle').textContent = authMode === 'signin' ? 'Criar uma conta' : 'Já tenho uma conta';
-  $('#auth-password').autocomplete = authMode === 'signin' ? 'current-password' : 'new-password';
-  $('#auth-error').textContent = '';
-});
 $('#auth-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const email = $('#auth-email').value.trim();
-  const password = $('#auth-password').value;
   const button = $('#auth-submit');
   button.disabled = true;
   $('#auth-error').textContent = '';
   try {
-    if (authMode === 'signup') await createUserWithEmailAndPassword(auth, email, password);
-    else await signInWithEmailAndPassword(auth, email, password);
+    await signInWithEmailAndPassword(auth, loginToEmail($('#auth-email').value), $('#auth-password').value);
   } catch (error) {
     const messages = {
-      'auth/email-already-in-use': 'Já existe uma conta com este e-mail. Entre nela.',
-      'auth/invalid-credential': 'E-mail ou senha incorretos.',
-      'auth/invalid-email': 'Digite um e-mail válido.',
-      'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
+      'auth/invalid-credential': 'Usuário ou senha incorretos.',
+      'auth/invalid-email': 'Confira o usuário digitado.',
       'auth/too-many-requests': 'Muitas tentativas. Aguarde e tente novamente.',
       'auth/network-request-failed': 'Sem conexão. Verifique a internet e tente novamente.',
-      'auth/operation-not-allowed': 'Ative o método E-mail/Senha em Authentication no Firebase Console.',
     };
-    $('#auth-error').textContent = messages[error.code] || 'Não foi possível entrar. Confira as configurações do Firebase.';
+    $('#auth-error').textContent = messages[error.code] || 'Não foi possível entrar. Tente novamente.';
   } finally { button.disabled = false; }
 });
 $('#sign-out')?.addEventListener('click', () => signOut(auth));
+function showAccessMessage(message) {
+  $('#app-shell').hidden = true;
+  $('#auth-panel').hidden = false;
+  $('#auth-error').innerHTML = `${esc(message)} <a href="index.html">Ir para minha área</a>`;
+}
 onAuthStateChanged(auth, async user => {
   if (stopRealtime) { stopRealtime(); stopRealtime = null; }
   activeUser = user;
@@ -534,19 +634,30 @@ onAuthStateChanged(auth, async user => {
     $('#auth-panel').hidden = false;
     return;
   }
-  $('#auth-panel').hidden = true;
-  $('#app-shell').hidden = false;
   const plannerRef = doc(db, 'planners', user.uid);
   try {
+    let site = null;
+    if (!isAdmin(user)) {
+      const account = (await getDoc(doc(db, 'accounts', user.uid))).data();
+      if (!account?.products?.organizador) return showAccessMessage('Seu acesso não inclui o Organizador de casamento.');
+      if (account.status !== 'pago') return showAccessMessage('O organizador será liberado assim que o pagamento for confirmado.');
+      document.body.dataset.theme = `m${account.products.organizador}`;
+      if (account.slug) site = (await getDoc(doc(db, 'sites', account.slug))).data() || null;
+    }
+    $('#auth-panel').hidden = true;
+    $('#app-shell').hidden = false;
+    $('#user-avatar').title = user.email || 'Sua conta';
     const saved = await getDoc(plannerRef);
     if (saved.exists()) data = normalizeData(saved.data().data);
     else {
-      data = loadData();
+      if (isAdmin(user)) data = loadData();
+      else data = { wedding: { couple: site?.couple || '', date: site?.casamento?.date || '', time: site?.casamento?.time || '', venue: site?.casamento?.venue || '' }, guests: [], expenses: [], ceremony: [], ceremonial: [], supplies: [], tasks: [], notes: [] };
       await setDoc(plannerRef, { data, updatedAt: serverTimestamp() });
       localStorage.removeItem(STORAGE_KEY);
     }
     render();
     updateProgress();
+    if (!guideSeen()) setTimeout(startGuide, 500);
     stopRealtime = onSnapshot(plannerRef, snapshot => {
       if (!snapshot.exists() || snapshot.metadata.hasPendingWrites) return;
       data = normalizeData(snapshot.data().data);
