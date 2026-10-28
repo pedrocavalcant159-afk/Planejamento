@@ -64,6 +64,7 @@ function accessMessage(client) {
     `Sua área: ${areaUrl()}`,
     `Usuário: ${client.username}`,
     `Senha: ${client.password}`,
+    ...(client.partner ? ['', 'Segundo acesso (para o parceiro ou a parceira):', `Usuário: ${client.partner.username}`, `Senha: ${client.partner.password}`] : []),
     ...(links.length ? ['', 'Links para compartilhar com os convidados:', ...links] : []),
   ].join('\n');
 }
@@ -197,6 +198,8 @@ function openClientForm(uid = null) {
 function writeClientDocs(batch, client) {
   batch.set(doc(db, 'clients', client.uid), { ...client, updatedAt: serverTimestamp() }, { merge: true });
   batch.set(doc(db, 'accounts', client.uid), { slug: client.slug, couple: client.couple, products: client.products, status: client.status, amount: client.amount, pix: client.status === 'aguardando' ? pixFor(client) : '', updatedAt: serverTimestamp() });
+  // Segundo acesso do casal: outra conta que abre o mesmo planejamento (plannerUid).
+  if (client.partner?.uid) batch.set(doc(db, 'accounts', client.partner.uid), { slug: client.slug, couple: client.couple, products: client.products, status: client.status, amount: client.amount, pix: client.status === 'aguardando' ? pixFor(client) : '', plannerUid: client.uid, partner: true, updatedAt: serverTimestamp() });
   batch.set(doc(db, 'sites', client.slug), { slug: client.slug, couple: client.couple, ownerUid: client.uid, active: client.status === 'pago', products: client.products, casamento: client.casamento, cha: client.cha, custom: client.custom || {}, updatedAt: serverTimestamp() });
 }
 
@@ -266,6 +269,7 @@ async function removeClient(uid) {
   if (!client || !confirm(`Excluir ${client.couple}?\n\nO acesso, os links e todos os dados do casal serão apagados. Esta ação não pode ser desfeita.`)) return;
   try {
     await withClientSession(client, user => deleteUser(user)).catch(e => { if (e.code !== 'auth/invalid-credential' && e.code !== 'auth/user-not-found') throw e; });
+    if (client.partner?.uid) { await withClientSession(client.partner, user => deleteUser(user)).catch(() => {}); await deleteDoc(doc(db, 'accounts', client.partner.uid)); }
     for (const sub of ['rsvps', 'reservas', 'fotos']) {
       const snap = await getDocs(collection(db, 'sites', client.slug, sub));
       await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
@@ -276,6 +280,57 @@ async function removeClient(uid) {
     $('#admin-modal').close();
     notify('Cliente excluído.');
   } catch (e) { console.error(e); alert(e.userMessage || 'Não foi possível excluir o cliente.'); }
+}
+
+/* ---------- Segundo acesso do casal ---------- */
+function openPartnerForm(uid) {
+  const c = clients.find(x => x.uid === uid);
+  if (!c) return;
+  const modal = openModal(`<form id="partner-form" novalidate>${modalHead('SEGUNDO ACESSO', c.couple)}
+    <p class="field-hint" style="margin-top:0">O parceiro ou a parceira entra com um login próprio e vê e edita o mesmo planejamento, em tempo real. A área do cliente e os links continuam os mesmos.</p>
+    <div class="modal-fields">${field('username', 'Usuário', `${c.username}2`, 'required autocapitalize="none" spellcheck="false"')}
+      <div class="field"><label for="f-password">Senha</label><div class="inline-input"><input id="f-password" name="password" value="${randomPassword()}" required minlength="6"><button type="button" class="button button-secondary button-sm" id="regen-password">Gerar</button></div></div></div>
+    <p class="auth-error" id="form-error" role="alert"></p>
+    <div class="modal-actions"><button type="button" class="button button-quiet" data-back>Voltar</button><button type="submit" class="button button-primary" id="form-submit">Criar acesso</button></div></form>`);
+  const form = $('#partner-form', modal);
+  $('#regen-password', form).addEventListener('click', () => { form.password.value = randomPassword(); });
+  form.querySelector('[data-back]').addEventListener('click', () => openDetail(uid));
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const username = form.username.value.trim().toLowerCase(), password = form.password.value.trim(), error = $('#form-error', form), button = $('#form-submit', form);
+    error.textContent = '';
+    if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)) return (error.textContent = 'O usuário precisa ter de 3 a 40 letras minúsculas, números, ponto, hífen ou sublinhado.');
+    if (password.length < 6) return (error.textContent = 'A senha precisa ter pelo menos 6 caracteres.');
+    button.disabled = true; button.textContent = 'Criando...';
+    try {
+      let partnerUid;
+      try { partnerUid = (await createUserWithEmailAndPassword(clientAuth, loginToEmail(username), password)).user.uid; }
+      catch (e) { if (e.code === 'auth/email-already-in-use') e.userMessage = 'Esse usuário já existe. Escolha outro.'; throw e; }
+      finally { await signOut(clientAuth).catch(() => {}); }
+      const partner = { uid: partnerUid, username, password };
+      const { createdAt, ...rest } = c;
+      await saveClient({ ...rest, partner });
+      c.partner = partner;
+      notify('Segundo acesso criado.');
+      openDetail(uid);
+    } catch (e) {
+      console.error(e);
+      error.textContent = e.userMessage || 'Não foi possível criar o acesso. Confira as regras do Firestore.';
+    } finally { button.disabled = false; button.textContent = 'Criar acesso'; }
+  });
+}
+async function removePartner(uid) {
+  const c = clients.find(x => x.uid === uid);
+  if (!c?.partner || !confirm(`Remover o segundo acesso (${c.partner.username})?\n\nO planejamento continua salvo; só esse login deixa de funcionar.`)) return;
+  try {
+    await withClientSession(c.partner, user => deleteUser(user)).catch(e => { if (e.code !== 'auth/invalid-credential' && e.code !== 'auth/user-not-found') throw e; });
+    await deleteDoc(doc(db, 'accounts', c.partner.uid));
+    const { createdAt, ...rest } = c;
+    await saveClient({ ...rest, partner: null });
+    c.partner = null;
+    notify('Segundo acesso removido.');
+    openDetail(uid);
+  } catch (e) { console.error(e); alert(e.userMessage || 'Não foi possível remover o segundo acesso.'); }
 }
 
 /* ---------- Detalhes ---------- */
@@ -290,6 +345,7 @@ function openDetail(uid, justCreated = false) {
     <div class="detail-grid">
       <div class="detail-item"><span>Usuário</span><strong>${esc(c.username)}<button class="copy-mini" data-copy="${esc(c.username)}">Copiar</button></strong></div>
       <div class="detail-item"><span>Senha</span><strong>${esc(c.password)}<button class="copy-mini" data-copy="${esc(c.password)}">Copiar</button></strong></div>
+      ${c.partner ? `<div class="detail-item"><span>Segundo acesso</span><strong>${esc(c.partner.username)}<button class="copy-mini" data-copy="${esc(c.partner.username)}">Copiar</button></strong></div><div class="detail-item"><span>Senha do segundo acesso</span><strong>${esc(c.partner.password)}<button class="copy-mini" data-copy="${esc(c.partner.password)}">Copiar</button></strong></div>` : ''}
       <div class="detail-item"><span>Valor</span><strong>${money(c.amount)}</strong></div>
       <div class="detail-item"><span>WhatsApp</span><strong>${esc(c.phone || 'Não informado')}</strong></div>
       ${Object.keys(c.products).some(k => PRODUCTS[k].event === 'cha') ? `<div class="detail-item"><span>Chá de panela</span><strong>${esc(eventLine('cha'))}</strong></div>` : ''}
@@ -314,6 +370,7 @@ function openDetail(uid, justCreated = false) {
       <button class="button button-secondary" data-act="edit">Editar</button>
       ${links.some(k => PRODUCTS[k].templates) ? '<button class="button button-secondary" data-act="custom">Fotos e textos</button>' : ''}
       <button class="button button-secondary" data-act="password">Redefinir senha</button>
+      ${c.products?.organizador ? (c.partner ? '<button class="button button-secondary" data-act="partner-remove">Remover segundo acesso</button>' : '<button class="button button-secondary" data-act="partner">Criar acesso do parceiro(a)</button>') : ''}
       <span class="spacer"></span>
       ${c.status !== 'cancelado' ? '<button class="button button-secondary" data-act="cancelado">Cancelar pedido</button>' : ''}
       <button class="button button-danger-ghost" data-act="delete">Excluir</button>
@@ -328,6 +385,8 @@ function openDetail(uid, justCreated = false) {
     if (act === 'custom') openCustomize(uid);
     if (act === 'password' && confirm('Gerar uma nova senha para este cliente? A senha atual deixará de funcionar.')) resetPassword(uid);
     if (act === 'delete') removeClient(uid);
+    if (act === 'partner') openPartnerForm(uid);
+    if (act === 'partner-remove') removePartner(uid);
   }));
 }
 

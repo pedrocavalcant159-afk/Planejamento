@@ -7,7 +7,12 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function isAdmin() { return signedIn() && request.auth.token.email.lower() in ['pedrocavalcant159@gmail.com']; }
     function siteData(slug) { return get(/databases/$(database)/documents/sites/$(slug)).data; }
-    function isOwner(slug) { return signedIn() && siteData(slug).ownerUid == request.auth.uid; }
+    function account() { return get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data; }
+    function hasAccount() { return signedIn() && exists(/databases/$(database)/documents/accounts/$(request.auth.uid)); }
+    // O casal (inclusive o segundo acesso, que tem o mesmo link em accounts) é dono do site.
+    function isOwner(slug) { return signedIn() && (siteData(slug).ownerUid == request.auth.uid || (hasAccount() && account().get('slug', '') == slug)); }
+    // Planejamento do casal: o dono ou o segundo acesso (accounts.plannerUid aponta para o dono).
+    function canPlan(uid) { return isAdmin() || (signedIn() && (request.auth.uid == uid || (hasAccount() && account().get('plannerUid', '') == uid))); }
     function siteActive(slug) { return exists(/databases/$(database)/documents/sites/$(slug)) && siteData(slug).active == true; }
     function shortText(value, min, max) { return value is string && value.size() >= min && value.size() <= max; }
 
@@ -25,8 +30,8 @@ service cloud.firestore {
 
     // Dados do organizador de casamento de cada cliente e os anexos dos gastos (fotos, PDFs, contratos).
     match /planners/{uid} {
-      allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid);
-      match /anexos/{fileId} { allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid); }
+      allow read, write: if canPlan(uid);
+      match /anexos/{fileId} { allow read, write: if canPlan(uid); }
     }
 
     // Dados públicos usados pelo convite, lista de presentes e site de casamento.

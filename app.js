@@ -1,15 +1,26 @@
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import { doc, getDoc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { auth, db, isAdmin, loginToEmail } from './lib/firebase.js';
+import { WEDDING_STYLES, CEREMONY_TYPES, VENDOR_STATUSES, BUDGET_SPLIT, checklist, alerts, answer, QUESTIONS, vendorFinal } from './lib/planner.js';
 
 let activeUser = null;
+let plannerSlug = '';
+let plannerId = '';
+let siteRsvps = null;
 let stopRealtime = null;
 let saveQueue = Promise.resolve();
 const STORAGE_KEY = 'entre-nos-casamento-v1';
-const navLabels = { inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', cerimonia: 'Cerimônia & músicas', cerimonial: 'Cerimonial do dia D', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
+const navLabels = { documentos: 'Documentos', inspiracoes: 'Inspirações', diad: 'Central do Dia D', luademel: 'Lua de mel', inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', fornecedores: 'Fornecedores', cerimonia: 'Cerimônia & músicas', cerimonial: 'Cerimonial do dia D', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
 const expenseCategories = ['Comidas & Buffet', 'Decoração & Cenografia', 'Local / Espaço / Sítio', 'Trajes & Beleza', 'Audiovisual', 'Banda & DJ', 'Outros'];
 const renamedCategories = { 'Itens Avulsos & Lembrancinhas': 'Outros' };
 const guestGroups = ['Família Noiva', 'Família Noivo', 'Padrinhos', 'Amigos'];
+const guestStatuses = ['Pendente', 'Enviado', 'Confirmado', 'Recusado'];
+const dietaryOptions = ['Vegetariano', 'Vegano', 'Sem glúten', 'Sem lactose', 'Alergia a frutos do mar', 'Alergia a amendoim', 'Diabético'];
+const bookingTypes = ['Hospedagem', 'Passagem', 'Passeio', 'Transporte', 'Seguro viagem', 'Outro'];
+const bookingStatuses = ['Opção', 'Reservado', 'Pago', 'Cancelado'];
+const packingCategories = ['Documentos', 'Roupas', 'Higiene', 'Eletrônicos', 'Saúde', 'Outros'];
+const docCategories = ['Contratos', 'Propostas', 'Comprovantes e recibos', 'Notas fiscais', 'Documentos da cerimônia', 'Outros'];
+const paletteDefaults = ['#f4efe6', '#e8d5b5', '#c9a27a', '#7a8a5c'];
 const expenseStatuses = ['Pendente', 'Pago Pix', 'Cartão', 'Boleto', 'Presente Ganho'];
 const checklistCategories = ['Descartáveis & Limpeza', 'Alimentos & Bebidas', 'Utensílios & Cozinha', 'Eletroportáteis & Ferramentas', 'Itens Pessoais & Documentos'];
 const checklistStatuses = ['Pendente', 'Comprado', 'No Carro', 'No Local'];
@@ -28,7 +39,7 @@ const byTaskOrder = (a, b) => (a.date || '9999').localeCompare(b.date || '9999')
 const slugOf = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '-');
 const ceremonySteps = ['Entrada com placa', 'Entrada do noivo + mãe', 'Entrada dos padrinhos', 'Floristas', 'Entrada da noiva + pai', 'Alianças', 'Votos', 'Saída'];
 const defaultData = {
-  wedding: { couple: 'Marina & Rafael', date: '2026-11-14', time: '11:30', venue: 'Sítio das Oliveiras' },
+  wedding: { couple: 'Marina & Rafael', date: '2026-11-14', time: '11:30', venue: 'Sítio das Oliveiras', guestsExpected: 100, budget: 30000, style: 'Romântico', ceremonyType: 'Religiosa' },
   guests: [
     { id: 'g1', name: 'Ana Paula Oliveira', phone: '(11) 98821-4040', group: 'Família Noiva', status: 'Confirmado', companions: 1, children: 0 },
     { id: 'g2', name: 'Carlos Eduardo Souza', phone: '(11) 99752-8163', group: 'Família Noivo', status: 'Confirmado', companions: 0, children: 0 },
@@ -90,6 +101,28 @@ const defaultData = {
   ],
   notes: [],
   customCategories: [],
+  vendors: [],
+  tables: [],
+  importedRsvps: [],
+  emergencyContacts: [],
+  places: [],
+  planB: [
+    { id: 'pb1', problem: 'Chuva ou vento forte', solution: 'Tenda reserva confirmada com o local e cerimônia na área coberta.', owner: '' },
+    { id: 'pb2', problem: 'Atraso de fornecedor', solution: 'Ligar para o contato de emergência do fornecedor e adiantar o que não depende dele.', owner: '' },
+    { id: 'pb3', problem: 'Falta de energia', solution: 'Confirmar gerador com o local e o DJ.', owner: '' },
+    { id: 'pb4', problem: 'Ausência de alguém importante', solution: 'Ter um substituto combinado (padrinho, leitura, alianças).', owner: '' },
+    { id: 'pb5', problem: 'Falta de algum item', solution: 'Kit de emergência e lista do que levar conferida na véspera.', owner: '' },
+  ],
+  kit: ['Agulha, linha e alfinetes', 'Curativos e esparadrapo', 'Remédio para dor de cabeça e enjoo', 'Lenços de papel', 'Maquiagem para retoque', 'Grampos e elásticos de cabelo', 'Carregador e bateria portátil', 'Fita dupla face', 'Tesoura pequena', 'Desodorante e perfume', 'Água e um lanchinho', 'Sapato baixo de reserva'].map((item, i) => ({ id: `k${i + 1}`, item, done: false })),
+  honeymoon: { destination: '', start: '', end: '', budget: 0, saved: 0, notes: '' },
+  hmDestinations: [],
+  hmBookings: [],
+  hmItinerary: [],
+  hmPacking: [['Passaporte / RG', 'Documentos'], ['Reservas e passagens salvas no celular', 'Documentos'], ['Seguro viagem', 'Documentos'], ['Cartões e um pouco de dinheiro', 'Documentos'], ['Roupas de banho', 'Roupas'], ['Roupa para jantar especial', 'Roupas'], ['Protetor solar', 'Saúde'], ['Remédios de uso pessoal', 'Saúde'], ['Kit de higiene', 'Higiene'], ['Carregadores e adaptador de tomada', 'Eletrônicos']].map(([item, category], i) => ({ id: `m${i + 1}`, item, category, done: false })),
+  hmBoard: [{ id: 'sonhos', title: 'Nossa viagem dos sonhos', files: [], links: [] }],
+  documents: [],
+  docChecklist: ['Certidões de nascimento atualizadas dos dois', 'RG e CPF dos dois', 'Comprovante de residência', 'Habilitação de casamento no cartório', 'Certificado do curso de noivos', 'Certidões de batismo (cerimônia religiosa)', 'Contratos assinados dos fornecedores', 'Comprovantes de pagamento'].map((item, i) => ({ id: `d${i + 1}`, item, done: false })),
+  inspirations: ['Decoração', 'Vestido', 'Cabelo e maquiagem', 'Flores e buquê', 'Bolo e doces', 'Papelaria'].map((title, i) => ({ id: `ins${i + 1}`, title, notes: '', colors: [], files: [], links: [] })),
 };
 
 function loadData() {
@@ -102,12 +135,30 @@ let data = structuredClone(defaultData);
 let currentPage = 'inicio';
 let guestFilter = 'Todos';
 let guestSearch = '';
+let guestStatusFilter = 'Todos';
+let guestView = 'lista';
+let docFilter = 'Todos';
+let docSearch = '';
 let expenseFilter = 'Todas';
 let weekStart = weekOf(todayIso());
+let timelineView = 'semana';
+let showDiscarded = false;
+let vendorTab = 'Todos';
+let dayTrack = 'Tudo';
+const contractStatuses = ['Sem contrato', 'Enviado para assinatura', 'Assinado'];
+const tracks = ['Geral', 'Noiva', 'Noivo'];
+const people = g => 1 + Number(g.companions || 0) + Number(g.children || 0);
+const sameName = (a, b) => slugOf(a).replace(/[^a-z0-9]/g, '') === slugOf(b).replace(/[^a-z0-9]/g, '');
+const waLink = (phone, text) => { const n = String(phone || '').replace(/\D/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1'); return `https://wa.me/${n}?text=${encodeURIComponent(text)}`; };
+const hourOf = value => String(value || '').slice(0, 5);
 let toastTimer;
 let animateNextRender = true;
 const $ = (s, root = document) => root.querySelector(s);
 const icons = {
+  phone: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  plane: '<path d="M10.5 13.5 3 11l1.5-1.5 7 1 4-4.5c1-1 2.5-1.5 3.5-.5s.5 2.5-.5 3.5l-4.5 4 1 7L13.5 21l-2.5-7.5-3 3V19l-1.5 1-1-3-3-1L3.5 15H6z"/>',
+  shield: '<path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/><path d="m9 12 2 2 4-4"/>',
   chat: '<path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4A8 8 0 1 1 20 11.5z"/><path d="M9 10.5h.01M12 10.5h.01M15 10.5h.01"/>',
   clip: '<path d="m20.5 11.5-8.4 8.4a5 5 0 0 1-7.1-7.1l8.4-8.4a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/>',
   link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
@@ -151,7 +202,7 @@ function save(message = '', animate = true) {
   updateProgress(); animateNextRender = animate;
   if (message) notify(message);
   if (!activeUser) return;
-  const plannerRef = doc(db, 'planners', activeUser.uid);
+  const plannerRef = doc(db, 'planners', plannerId || activeUser.uid);
   saveQueue = saveQueue.catch(() => {}).then(() => setDoc(plannerRef, { data, updatedAt: serverTimestamp() }));
   saveQueue.catch(error => { console.error('Falha ao salvar no Firestore:', error); notify('Não foi possível salvar. Verifique sua conexão.'); });
 }
@@ -183,7 +234,7 @@ function setPage(page) { currentPage = page; animateNextRender = true; $('.nav-i
 function render() {
   const content = $('#page-content');
   updateTopbarStatus();
-  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, cerimonia: renderCeremony, cerimonial: renderCeremonial, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
+  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, fornecedores: renderVendors, diad: renderDayD, luademel: renderHoneymoon, documentos: renderDocuments, inspiracoes: renderInspirations, cerimonia: renderCeremony, cerimonial: renderCeremonial, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
   content.classList.toggle('page-enter', animateNextRender);
   if (animateNextRender) setTimeout(() => content.classList.remove('page-enter'), 900);
   animateNextRender = false;
@@ -207,18 +258,139 @@ function renderDashboard() {
   <section class="card event-card"><span class="event-icon">${icon('heart')}</span><div class="event-info"><div class="event-title"><h2>${esc(data.wedding.couple || 'Nosso casamento')}</h2><span class="status-pill ${countdown.complete ? 'is-done' : ''}"><i></i>${countdown.unknown ? 'Data a definir' : countdown.complete ? 'Casamento realizado' : countdown.days === 0 ? 'É hoje!' : `Faltam ${countdown.days} ${countdown.days === 1 ? 'dia' : 'dias'}`}</span></div><p>${[esc(data.wedding.venue || 'Local a definir'), dateLabel(data.wedding.date), esc(data.wedding.time || '')].filter(Boolean).join(' · ')}</p><div class="week-chips">${Array.from({ length: 7 }, (_, i) => addDays(weekOf(todayIso()), i)).map(day => { const list = data.tasks.filter(t => t.date === day), done = list.filter(t => t.status === 'Concluído').length; return `<span class="week-chip ${list.length && done === list.length ? 'is-done' : ''} ${day === todayIso() ? 'is-current' : ''}" title="${esc(shortDate(day))}: ${done} de ${list.length} tarefas">${esc(fromIso(day).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', ''))} <small>${done}/${list.length}</small></span>`; }).join('')}</div></div>
   <div class="countdown ${countdown.complete || countdown.unknown ? 'countdown-complete' : ''}" id="live-countdown" aria-label="Contagem regressiva">${countdown.unknown ? '<strong>Quando é o grande dia?</strong><span>Defina a data em "Editar detalhes"</span>' : countdown.complete ? '<strong>O grande dia já aconteceu ♡</strong><span>Atualize a data nos detalhes</span>' : `<div class="count-unit"><strong data-count="days">${countdown.days}</strong><span>dias</span></div><div class="count-unit"><strong data-count="hours">${String(countdown.hours).padStart(2, '0')}</strong><span>horas</span></div><div class="count-unit"><strong data-count="minutes">${String(countdown.minutes).padStart(2, '0')}</strong><span>min</span></div><div class="count-unit"><strong data-count="seconds">${String(countdown.seconds).padStart(2, '0')}</strong><span>seg</span></div>`}</div>
   <div class="event-actions"><button class="button button-primary" data-go="cronograma">${icon('calendar')} Ver cronograma</button><button class="button button-secondary" data-action="edit-wedding">${icon('settings')} Editar detalhes</button></div></section>
+  ${weddingProfile()}
+  <section class="assistant-grid">
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Sua cerimonialista virtual</h2><p class="panel-subtitle">O que precisa de atenção agora</p></div></div><div class="alert-list">${alerts(data).map(a => `<button type="button" class="alert-item alert-${a.level}" ${a.action ? `data-action="${a.action}"` : a.page ? `data-go="${a.page}"` : 'disabled'}><span class="alert-dot" aria-hidden="true"></span><span><strong>${esc(a.title)}</strong><small>${esc(a.text)}</small></span></button>`).join('')}</div></article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Pergunte à cerimonialista</h2><p class="panel-subtitle">Respostas com os dados do seu casamento</p></div></div><div class="ask-chips">${QUESTIONS.map(q => `<button type="button" class="ask-chip" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div><form class="ask-form" id="ask-form"><input name="q" placeholder="Ex.: quanto posso gastar com decoração?" aria-label="Sua pergunta" autocomplete="off"><button class="button button-primary button-sm" type="submit">Perguntar</button></form><div class="ask-answer" id="ask-answer" aria-live="polite" hidden></div></article>
+  </section>
   <section class="notice-card"><div><strong>${next ? 'Próximo passo' : data.tasks.length ? 'Tudo em dia' : 'Vamos começar?'}</strong><p>${next ? `${esc(next.title)} · ${esc(next.date ? shortDate(next.date) : 'Prioridade')}${next.time ? `, ${esc(next.time)}` : ''}` : data.tasks.length ? 'Todas as tarefas do cronograma foram concluídas. Agora é só aproveitar.' : 'Seu organizador está novinho. Adicione a primeira tarefa do cronograma ou cadastre os convidados.'}</p></div>${next ? `<button class="button button-secondary" data-task-done="${next.id}">Marcar como feita</button>` : data.tasks.length ? '' : `<button class="button button-secondary" data-action="add-task">${icon('plus')} Adicionar tarefa</button>`}</section>
   <section class="stats-grid">${stat('convidados', 'users', 'Confirmados', confirmedGuests(), `de ${totalGuests()} pessoas na lista`)}${stat('financeiro', 'wallet', 'Total pago', money(spent()), `de ${money(planned())} orçados`)}${stat('financeiro', 'clock', 'Saldo a pagar', money(due()), `${paidRatio}% já quitado ou ganho`)}${stat('cronograma', 'check', 'Tarefas', `${doneTasks}/${data.tasks.length}`, `${progress()}% do cronograma`)}${stat('checklist', 'box', 'Itens no local', `${onSite}/${data.supplies.length}`, 'do checklist do que levar')}</section>
   <section class="dashboard-grid"><article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Visão do orçamento</h2><p class="panel-subtitle">Quanto já foi pago e para onde vai o dinheiro</p></div><button class="text-button" data-go="financeiro">Ver detalhes →</button></div><div class="budget-total">${money(spent())}</div><div class="budget-meta"><span>do total de ${money(planned())}</span><span>${paidRatio}% pago</span></div><div class="progress-track"><span style="width:${paidRatio}%"></span></div><div class="legend-row"><span><i class="legend-dot"></i>Valor pago</span><span><i class="legend-dot soft"></i>Restante</span></div><div class="category-list" style="margin-top:22px">${groups.length ? groups.map(x => `<div class="category-row"><span class="category-name">${esc(x.c)}</span><span class="category-value">${money(x.sum)}</span><div class="mini-track"><span style="width:${Math.max(3, Math.round(x.sum / planned() * 100))}%"></span></div></div>`).join('') : empty('Adicione seus primeiros gastos.')}</div></article>
   <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Próximas tarefas</h2><p class="panel-subtitle">${pending.length} ${pending.length === 1 ? 'tarefa pendente' : 'tarefas pendentes'}</p></div><button class="text-button" data-go="cronograma">Ver cronograma →</button></div><div class="task-list">${tasks.length ? tasks.map(t => `<label class="task-row"><input class="task-check" type="checkbox" data-task-check="${t.id}"><span class="task-text">${esc(t.title)}</span><span class="task-meta">${esc(t.date ? shortDate(t.date) : 'Prioridade')}${t.time ? ` · ${esc(t.time)}` : ''}</span></label>`).join('') : empty(data.tasks.length ? 'Tudo por aqui concluído!' : 'Nenhuma tarefa ainda.')}</div></article></section>`;
 }
+function weddingProfile() {
+  const w = data.wedding, budget = Number(w.budget || 0), guests = Number(w.guestsExpected || 0), used = planned();
+  const ratio = budget ? Math.min(100, Math.round(used / budget * 100)) : 0;
+  return `<section class="card wedding-profile"><div class="profile-info"><p class="eyebrow">NOSSO CASAMENTO</p><h2>Um dia para lembrar</h2><ul>${w.date ? `<li>${icon('calendar')}${dateLabel(w.date)}</li>` : ''}<li>${icon('users')}${guests ? `${guests} convidados previstos` : 'Convidados previstos a definir'}</li><li>${icon('heart')}Estilo ${esc((w.style || 'a definir').toLowerCase())}${w.ceremonyType ? ` · cerimônia ${esc(w.ceremonyType.toLowerCase())}` : ''}</li></ul></div>
+    <div class="profile-boxes"><div class="profile-box"><span>Orçamento máximo</span><strong class="is-accent">${budget ? money(budget) : '—'}</strong></div><div class="profile-box"><span>Por convidado</span><strong>${budget && guests ? money(budget / guests) : '—'}</strong></div><div class="profile-box profile-used"><span>Já orçado</span><strong class="${budget && used > budget ? 'is-over' : ''}">${money(used)}</strong>${budget ? `<div class="mini-track"><span style="width:${ratio}%"></span></div><small>${ratio}% do orçamento máximo</small>` : ''}</div></div>
+    ${budget && guests ? '<p class="profile-note">O valor por convidado é uma referência para o casamento inteiro, não só para a comida.</p>' : `<button type="button" class="button button-secondary button-sm profile-edit" data-action="edit-wedding">${icon('settings')}Definir orçamento e convidados</button>`}</section>`;
+}
+function renderVendors() {
+  const vendors = data.vendors || [], budget = Number(data.wedding.budget || 0);
+  const active = vendors.filter(v => v.status !== 'Descartado');
+  const contracted = vendors.filter(v => v.status === 'Contratado');
+  const categories = allExpenseCategories().filter(c => vendors.some(v => v.category === c && (vendorTab === 'Todos' ? v.status !== 'Descartado' : vendorTab === 'Contratados' ? v.status === 'Contratado' : vendorTab === 'Em andamento' ? ['Orçando', 'Orçamento recebido', 'Negociando'].includes(v.status) : vendorTab === 'Pesquisando' ? v.status === 'Pesquisando' : v.status === 'Descartado')));
+  const missing = checklist(data).filter(i => i.hire && !i.done && !vendors.some(v => v.category === i.hire));
+  const card = (v, best) => {
+    const final = vendorFinal(v), includes = String(v.includes || '').split('\n').map(x => x.trim()).filter(Boolean), files = (v.files || []).length + (v.links || []).length;
+    const phone = String(v.phone || '').replace(/\D/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1');
+    const expense = data.expenses.find(e => e.id === v.expenseId);
+    return `<article class="vendor-card status-${slugOf(v.status)} ${best ? 'is-best' : ''}">
+      <header class="vendor-head"><div><h3>${esc(v.name)}</h3>${v.contact ? `<small>${esc(v.contact)}</small>` : ''}</div><select class="status-select" data-vendor-status="${v.id}" aria-label="Status de ${esc(v.name)}">${VENDOR_STATUSES.map(st => `<option ${v.status === st ? 'selected' : ''}>${st}</option>`).join('')}</select></header>
+      ${best ? '<span class="vendor-flag">Menor preço</span>' : ''}
+      <div class="vendor-price"><strong>${final ? money(final) : 'Sem valor ainda'}</strong>${Number(v.discount) || Number(v.fees) ? `<small>${money(v.price)}${Number(v.discount) ? ` − ${money(v.discount)} de desconto` : ''}${Number(v.fees) ? ` + ${money(v.fees)} de taxas` : ''}</small>` : ''}${budget && final ? `<small>${(final / budget * 100).toFixed(1).replace('.', ',')}% do orçamento total</small>` : ''}</div>
+      ${includes.length ? `<ul class="vendor-includes">${includes.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+      ${v.conditions ? `<p class="vendor-text"><b>Condições:</b> ${esc(v.conditions)}</p>` : ''}
+      ${v.agreed ? `<p class="vendor-text"><b>O que ficou combinado:</b> ${esc(v.agreed)}</p>` : ''}
+      ${v.notes ? `<p class="vendor-text"><b>Negociação:</b> ${esc(v.notes)}</p>` : ''}
+      ${Number(v.overtime) ? `<p class="vendor-text"><b>Hora extra:</b> ${money(v.overtime)} por hora</p>` : ''}
+      ${expense?.installments?.length ? (() => { const list = expense.installments, next = list.filter(x => !x.paid).sort((a, b) => (a.due || '').localeCompare(b.due || ''))[0]; return `<p class="vendor-text vendor-parts"><b>Parcelas:</b> ${list.filter(x => x.paid).length} de ${list.length} pagas${next ? ` · próxima ${next.due ? esc(shortDate(next.due)) : 'sem data'} (${money(next.amount)})` : ' · tudo pago ♡'} <button type="button" class="text-button" data-action="installments-expense" data-id="${expense.id}">Ver parcelas</button></p>`; })() : ''}
+      ${v.status === 'Contratado' || v.contractStatus ? `<button type="button" class="contract-pill contract-${slugOf(v.contractStatus || 'Sem contrato')}" data-action="attach-vendor" data-id="${v.id}">${icon('note')}Contrato: ${esc(v.contractStatus || 'Sem contrato')}${files ? ` · ${files} ${files === 1 ? 'anexo' : 'anexos'}` : ''}</button>` : ''}
+      ${phone || v.email || v.link ? `<div class="vendor-contact">${phone ? `<a class="button button-secondary button-sm" href="https://wa.me/${phone}" target="_blank" rel="noopener">${icon('chat')}WhatsApp</a>` : ''}${v.email ? `<a class="button button-secondary button-sm" href="mailto:${esc(v.email)}">E-mail</a>` : ''}${v.link ? `<a class="button button-secondary button-sm" href="${esc(safeNoteUrl(/^[a-z]+:/i.test(v.link) ? v.link : `https://${v.link}`))}" target="_blank" rel="noopener noreferrer">${icon('link')}Site</a>` : ''}</div>` : ''}
+      <footer class="vendor-foot">${v.status === 'Contratado' ? `<span class="vendor-hired">✓ Contratado${expense ? ` · ${money(expense.planned)}` : ''}</span>` : `<button type="button" class="button button-primary button-sm" data-action="contract-vendor" data-id="${v.id}">Contratar</button>`}<div class="row-actions"><button type="button" class="attach-button" data-action="attach-vendor" data-id="${v.id}" aria-label="Anexos" title="Propostas, contratos e links">${icon('clip')}${files ? `<span class="attach-count">${files}</span>` : ''}</button><button type="button" data-action="edit-vendor" data-id="${v.id}" aria-label="Editar">${icon('edit')}</button><button type="button" data-action="delete-vendor" data-id="${v.id}" aria-label="Excluir">${icon('trash')}</button></div></footer>
+    </article>`;
+  };
+  const inTab = v => vendorTab === 'Todos' ? v.status !== 'Descartado' : vendorTab === 'Contratados' ? v.status === 'Contratado' : vendorTab === 'Em andamento' ? ['Orçando', 'Orçamento recebido', 'Negociando'].includes(v.status) : vendorTab === 'Pesquisando' ? v.status === 'Pesquisando' : v.status === 'Descartado';
+  const section = cat => {
+    const list = vendors.filter(v => v.category === cat && inTab(v));
+    const priced = list.filter(v => v.status !== 'Descartado' && vendorFinal(v) > 0), best = priced.length > 1 ? priced.reduce((a, b) => (vendorFinal(b) < vendorFinal(a) ? b : a)) : null;
+    const hiredOne = vendors.find(v => v.category === cat && v.status === 'Contratado'), ideal = budget && BUDGET_SPLIT[cat] ? budget * BUDGET_SPLIT[cat] : 0;
+    return `<section class="vendor-section"><div class="vendor-section-head"><div><h2>${esc(cat)}</h2><p>${list.length} ${list.length === 1 ? 'opção' : 'opções'} · ${hiredOne ? `contratado: ${esc(hiredOne.name)}` : 'ainda não contratado'}${ideal ? ` · sugestão até ${money(ideal)}` : ''}</p></div><button type="button" class="button button-secondary button-sm" data-action="add-vendor" data-id="${esc(cat)}">${icon('plus')}Opção</button></div>${list.length ? `<div class="vendor-grid">${list.map(v => card(v, best && v.id === best.id && !hiredOne)).join('')}</div>` : '<p class="vendor-empty">Só há opções descartadas nesta categoria.</p>'}</section>`;
+  };
+  return `${heading('FORNECEDORES', 'Orçamentos & fornecedores.', 'Cadastre os orçamentos, compare lado a lado e contrate. O valor e as parcelas vão direto para o financeiro.', `<button class="button button-primary" data-action="add-vendor">${icon('plus')}Adicionar fornecedor</button>`)}
+  <div class="summary-row"><span class="summary-chip">Fornecedores <strong>${vendors.length}</strong></span><span class="summary-chip">Contratados <strong>${contracted.length}</strong></span><span class="summary-chip">Não contratados <strong>${vendors.filter(v => !['Contratado', 'Descartado'].includes(v.status)).length}</strong></span><span class="summary-chip">Aguardando decisão <strong>${active.filter(v => ['Orçamento recebido', 'Negociando'].includes(v.status)).length}</strong></span><span class="summary-chip">Total contratado <strong>${money(contracted.reduce((n, v) => n + Number(data.expenses.find(e => e.id === v.expenseId)?.planned ?? vendorFinal(v)), 0))}</strong></span></div>
+  ${missing.length ? `<section class="notice-card vendor-missing"><div><strong>Ainda falta pesquisar</strong><p>Pelo prazo do seu casamento, estas contratações já deveriam estar andando.</p></div><div class="row-buttons">${missing.map(i => `<button type="button" class="button button-secondary button-sm" data-action="add-vendor" data-id="${esc(i.hire)}">${icon('plus')}${esc(i.hire)}${i.late ? ' · atrasado' : ''}</button>`).join('')}</div></section>` : ''}
+  <div class="custom-tabs view-tabs vendor-tabs" role="tablist">${[['Todos', vendors.filter(v => v.status !== 'Descartado').length], ['Contratados', contracted.length], ['Em andamento', vendors.filter(v => ['Orçando', 'Orçamento recebido', 'Negociando'].includes(v.status)).length], ['Pesquisando', vendors.filter(v => v.status === 'Pesquisando').length], ['Descartados', vendors.filter(v => v.status === 'Descartado').length]].map(([tab, n]) => `<button type="button" role="tab" data-vendor-tab="${tab}" aria-selected="${vendorTab === tab}">${tab} <small>${n}</small></button>`).join('')}</div>
+  ${categories.length ? categories.map(section).join('') : `<section class="card">${empty(vendors.length ? 'Nenhum fornecedor nesta aba.' : 'Nenhum fornecedor ainda. Cadastre o primeiro orçamento que você recebeu.')}</section>`}`;
+}
+function contractVendor(id) {
+  const v = data.vendors.find(x => x.id === id);
+  if (!v) return;
+  openModal(`Contratar ${v.name}`, [
+    `<p class="confirm-copy">O gasto entra no financeiro em <strong>${esc(v.category)}</strong>, com a entrada e as parcelas abaixo. Depois é só marcar cada parcela como paga.</p>`,
+    field('total', 'Valor fechado (R$)', vendorFinal(v) || '', 'number', null, false, { min: 0, step: '.01', required: true }),
+    field('method', 'Forma de pagamento', 'Pix', 'text', ['Pix', 'Cartão', 'Boleto', 'Dinheiro', 'Transferência']),
+    field('entry', 'Entrada (R$)', 0, 'number', null, false, { min: 0, step: '.01' }),
+    field('entryDate', 'Data da entrada', todayIso(), 'date'),
+    field('count', 'Parcelas depois da entrada', 1, 'number', null, false, { min: 0 }),
+    field('firstDate', 'Vencimento da 1ª parcela', addDays(todayIso(), 30), 'date'),
+  ].join(''), values => {
+    const total = Number(values.total || 0), entry = Math.min(total, Number(values.entry || 0)), count = Math.max(0, Math.round(Number(values.count || 0)));
+    const parts = [], rest = Math.round((total - entry) * 100) / 100;
+    if (entry > 0) parts.push({ id: uid('p'), label: 'Entrada', amount: entry, due: values.entryDate || todayIso(), paid: false });
+    if (rest > 0) {
+      const n = Math.max(1, count), each = Math.floor(rest / n * 100) / 100;
+      for (let i = 0; i < n; i++) {
+        const d = fromIso(values.firstDate || todayIso()); d.setMonth(d.getMonth() + i);
+        parts.push({ id: uid('p'), label: n === 1 ? 'Pagamento' : `Parcela ${i + 1}/${n}`, amount: i === n - 1 ? Math.round((rest - each * (n - 1)) * 100) / 100 : each, due: isoDate(d), paid: false });
+      }
+    }
+    const fields = { description: v.name, category: v.category, supplier: v.name, planned: total, installments: parts, notes: [`Contratado · ${values.method}`, v.conditions].filter(Boolean).join(' · ').slice(0, 200) };
+    let expense = data.expenses.find(e => e.id === v.expenseId);
+    if (expense) Object.assign(expense, fields, { paid: 0 });
+    else { expense = { id: uid('e'), paid: 0, status: 'Pendente', ...fields }; data.expenses.push(expense); }
+    v.status = 'Contratado'; v.expenseId = expense.id;
+    data.tasks.filter(t => t.hireCategory === v.category && t.status !== 'Concluído').forEach(t => { t.status = 'Concluído'; });
+    save(`${v.name} contratado. ${parts.length} ${parts.length === 1 ? 'pagamento lançado' : 'pagamentos lançados'} no financeiro.`);
+  });
+  $('#modal-submit').textContent = 'Contratar e lançar no financeiro';
+}
+function openInstallments(id) {
+  const e = data.expenses.find(x => x.id === id);
+  if (!e) return;
+  const row = p => `<div class="inst-row" data-inst="${p.id}"><input type="checkbox" data-k="paid" ${p.paid ? 'checked' : ''} aria-label="Paga"><input data-k="label" value="${esc(p.label || '')}" placeholder="Parcela" aria-label="Nome"><input type="number" step=".01" min="0" data-k="amount" value="${esc(p.amount ?? '')}" placeholder="Valor" aria-label="Valor"><input type="date" data-k="due" value="${esc(p.due || '')}" aria-label="Vencimento"><button type="button" class="icon-button" data-remove-inst aria-label="Remover parcela">×</button></div>`;
+  openModal(`Parcelas · ${e.description}`, `<div class="inst-head" style="grid-column:1/-1"><span>Paga</span><span>Parcela</span><span>Valor</span><span>Vencimento</span><span></span></div><div class="inst-list" id="inst-list" style="grid-column:1/-1">${(e.installments || []).map(row).join('')}</div><button type="button" class="button button-secondary button-sm" id="inst-add" style="grid-column:1/-1;justify-self:start">${icon('plus')}Parcela</button><p class="field-hint" style="grid-column:1/-1;margin:0">Marque as parcelas pagas: o valor pago do gasto se atualiza sozinho e os vencimentos aparecem nos alertas do painel.</p>`, () => {
+    const list = [...$('#inst-list').querySelectorAll('.inst-row')].map(r => ({ id: r.dataset.inst, label: r.querySelector('[data-k="label"]').value.trim(), amount: Number(r.querySelector('[data-k="amount"]').value || 0), due: r.querySelector('[data-k="due"]').value, paid: r.querySelector('[data-k="paid"]').checked })).filter(p => p.amount > 0);
+    e.installments = list;
+    if (list.length) e.paid = Math.round(list.filter(p => p.paid).reduce((n, p) => n + p.amount, 0) * 100) / 100;
+    save('Parcelas salvas.');
+  });
+  $('#inst-add').onclick = () => { $('#inst-list').insertAdjacentHTML('beforeend', row({ id: uid('p'), amount: '', due: '' })); $('#inst-list').lastElementChild.querySelector('[data-k="label"]').focus(); };
+  $('#inst-list').onclick = ev => { if (ev.target.closest('[data-remove-inst]')) ev.target.closest('.inst-row').remove(); };
+}
+function addChecklistItems(keys = null) {
+  const today = todayIso();
+  const items = checklist(data).filter(i => !i.done && !i.added && (!keys || keys.includes(i.key)));
+  items.forEach(i => data.tasks.push({ id: uid('t'), title: i.title, date: i.due < today ? today : i.due, time: '', priority: i.hire || i.late ? 'Alta' : 'Média', status: 'A Fazer', responsible: '', responsiblePhone: '', description: 'Sugestão da cerimonialista virtual', templateKey: i.key, hireCategory: i.hire || '' }));
+  return items.length;
+}
 function renderGuests() {
-  const visible = data.guests.filter(g => (guestFilter === 'Todos' || g.group === guestFilter) && `${g.name} ${g.phone}`.toLowerCase().includes(guestSearch.toLowerCase()));
-  const confirmed = confirmedGuests(), invited = data.guests.filter(g => g.status === 'Enviado').length;
-  return `${heading('LISTA DE CONVIDADOS', 'Convidados.', 'Acompanhe os convites e tenha a lista na ponta dos dedos.', '<button class="button button-secondary" data-action="import-guests"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-guest"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar convidado</button>')}
-  <div class="summary-row"><span class="summary-chip">Pessoas na lista <strong>${totalGuests()}</strong></span><span class="summary-chip">Confirmadas <strong>${confirmed}</strong></span><span class="summary-chip">Convites enviados <strong>${invited}</strong></span></div>
-  <div class="toolbar"><label class="search-box"><span class="search-mark">${icon('search')}</span><input id="guest-search" type="search" placeholder="Buscar por nome ou telefone" value="${esc(guestSearch)}"></label><select id="guest-filter" class="filter-select"><option>Todos</option>${guestGroups.map(g => `<option ${guestFilter === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>
-  <section class="card table-card"><div class="table-wrap"><table><thead><tr><th>Convidado</th><th>Grupo</th><th>Telefone / WhatsApp</th><th>Convite</th><th>Acompanhantes</th><th></th></tr></thead><tbody>${visible.length ? visible.map(g => `<tr><td><div class="person-cell"><span class="person-avatar">${esc(g.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase())}</span><span><span class="person-name">${esc(g.name)}</span><span class="person-sub">${Number(g.children) ? `${g.children} criança(s)` : 'Convidado(a)'}</span></span></div></td><td>${esc(g.group)}</td><td>${esc(g.phone || '—')}</td><td>${badge(g.status)}</td><td>${Number(g.companions || 0)} adulto(s) · ${Number(g.children || 0)} criança(s)</td><td><div class="row-actions"><button data-action="edit-guest" data-id="${g.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-guest" data-id="${g.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`).join('') : `<tr><td colspan="6">${empty('Nenhum convidado encontrado.')}</td></tr>`}</tbody></table></div><div class="table-footer">Exibindo <strong>${visible.length}</strong> de <strong>${data.guests.length}</strong> convidados · Pessoas confirmadas com acompanhantes: <strong>${confirmed}</strong></div></section>`;
+  const statusOk = g => guestStatusFilter === 'Todos' || g.status === guestStatusFilter;
+  const visible = data.guests.filter(g => (guestFilter === 'Todos' || g.group === guestFilter) && statusOk(g) && `${g.name} ${g.phone} ${g.family || ''}`.toLowerCase().includes(guestSearch.toLowerCase()));
+  const confirmed = data.guests.filter(g => g.status === 'Confirmado'), waiting = data.guests.filter(g => ['Pendente', 'Enviado'].includes(g.status));
+  const adults = confirmed.reduce((n, g) => n + 1 + Number(g.companions || 0), 0), kids = confirmed.reduce((n, g) => n + Number(g.children || 0), 0);
+  const diet = data.guests.filter(g => g.dietary && g.status !== 'Recusado'), expected = Number(data.wedding.guestsExpected || 0), total = totalGuests();
+  const tableName = id => data.tables.find(t => t.id === id)?.name || '';
+  const newRsvps = (siteRsvps || []).filter(r => !data.importedRsvps.includes(r.id));
+  const row = g => `<tr><td><div class="person-cell"><span class="person-avatar">${esc(g.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase())}</span><span><span class="person-name">${esc(g.name)}</span><span class="person-sub">${[g.family ? `Família ${esc(g.family)}` : '', Number(g.children) ? `${g.children} criança(s)` : ''].filter(Boolean).join(' · ') || 'Convidado(a)'}</span>${g.dietary ? `<span class="diet-chip">${esc(g.dietary)}</span>` : ''}</span></div></td><td>${esc(g.group)}</td><td>${g.phone ? `<a class="phone-link" href="${esc(waLink(g.phone, `Oi, ${g.name.split(' ')[0]}! ♡`))}" target="_blank" rel="noopener">${esc(g.phone)}</a>` : '—'}</td><td>${badge(g.status)}</td><td>${people(g)} · ${Number(g.companions || 0)} acomp. · ${Number(g.children || 0)} crianças</td><td>${esc(tableName(g.tableId) || '—')}</td><td><div class="row-actions"><button data-action="edit-guest" data-id="${g.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-guest" data-id="${g.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`;
+  const families = [...new Set(visible.map(g => g.family || g.name))].sort((a, b) => a.localeCompare(b));
+  const chip = g => `<span class="guest-chip status-${slugOf(g.status)}" draggable="true" data-guest-id="${g.id}" title="${esc(g.status)}"><b>${esc(g.name)}</b>${people(g) > 1 ? `<small>+${people(g) - 1}</small>` : ''}${g.dietary ? `<i title="${esc(g.dietary)}">●</i>` : ''}</span>`;
+  const seated = t => data.guests.filter(g => g.tableId === t.id && g.status !== 'Recusado');
+  const unseated = data.guests.filter(g => !data.tables.some(t => t.id === g.tableId) && g.status !== 'Recusado');
+  const view = guestView === 'familia'
+    ? `<div class="family-grid">${families.length ? families.map(f => { const members = visible.filter(g => (g.family || g.name) === f); return `<article class="card family-card"><header><h3>${esc(members.length > 1 || members[0]?.family ? `Família ${f}` : f)}</h3><span>${members.reduce((n, g) => n + people(g), 0)} pessoas</span></header><ul>${members.map(g => `<li><button type="button" class="month-task" data-action="edit-guest" data-id="${g.id}">${esc(g.name)}${people(g) > 1 ? ` <small>+${people(g) - 1}</small>` : ''}</button>${badge(g.status)}</li>`).join('')}</ul></article>`; }).join('') : `<section class="card">${empty('Nenhum convidado encontrado.')}</section>`}</div>`
+    : guestView === 'mesas'
+      ? `<div class="toolbar"><button type="button" class="button button-secondary" data-action="add-table">${icon('plus')}Mesa</button><span class="field-hint">Arraste os convidados para as mesas (no celular, edite o convidado e escolha a mesa).</span></div>
+        <div class="tables-layout"><aside class="card table-pool" data-table-drop=""><h3>Sem mesa · ${unseated.reduce((n, g) => n + people(g), 0)} pessoas</h3><div class="chip-wrap">${unseated.map(chip).join('') || '<p class="priority-empty">Todos sentados ♡</p>'}</div></aside>
+        <div class="tables-grid">${data.tables.length ? data.tables.map(t => { const list = seated(t), used = list.reduce((n, g) => n + people(g), 0), seats = Number(t.seats || 0); return `<article class="card seat-table ${seats && used > seats ? 'is-over' : ''}" data-table-drop="${t.id}"><header><div><h3>${esc(t.name)}</h3><small>${used}${seats ? ` de ${seats}` : ''} lugares</small></div><div class="row-actions"><button data-action="edit-table" data-id="${t.id}" aria-label="Editar mesa">${icon('edit')}</button><button data-action="delete-table" data-id="${t.id}" aria-label="Excluir mesa">${icon('trash')}</button></div></header>${seats ? `<div class="mini-track"><span style="width:${Math.min(100, Math.round(used / seats * 100))}%"></span></div>` : ''}<div class="chip-wrap">${list.map(chip).join('') || '<p class="priority-empty">Arraste convidados para cá.</p>'}</div></article>`; }).join('') : `<section class="card">${empty('Crie as mesas da festa para organizar os lugares.')}</section>`}</div></div>`
+      : `<section class="card table-card"><div class="table-wrap"><table><thead><tr><th>Convidado</th><th>Grupo</th><th>Telefone / WhatsApp</th><th>Convite</th><th>Pessoas</th><th>Mesa</th><th></th></tr></thead><tbody>${visible.length ? visible.map(row).join('') : `<tr><td colspan="7">${empty('Nenhum convidado encontrado.')}</td></tr>`}</tbody></table></div><div class="table-footer">Exibindo <strong>${visible.length}</strong> de <strong>${data.guests.length}</strong> convidados</div></section>`;
+  return `${heading('LISTA DE CONVIDADOS', 'Convidados.', 'Família, confirmações, restrições e mesas, prontos para mandar ao buffet.', `<button class="button button-secondary" data-action="export-guests">${icon('download')}Lista para o buffet</button><button class="button button-secondary" data-action="export-guests-csv">${icon('download')}Planilha</button><button class="button button-secondary" data-action="import-guests">${icon('upload')}Importar TXT</button><button class="button button-primary" data-action="add-guest">${icon('plus')}Adicionar convidado</button>`)}
+  <div class="summary-row"><span class="summary-chip">Na lista <strong>${total}</strong></span><span class="summary-chip">Confirmados <strong>${adults + kids}</strong> <small>${adults} adultos · ${kids} crianças</small></span><span class="summary-chip">Sem resposta <strong>${waiting.reduce((n, g) => n + people(g), 0)}</strong></span><span class="summary-chip">Restrições <strong>${diet.length}</strong></span>${expected ? `<span class="summary-chip ${total > expected ? 'is-late' : ''}">Previstos <strong>${expected}</strong> <small>${total > expected ? `${total - expected} a mais` : `${expected - total} vagas`}</small></span>` : ''}</div>
+  ${(() => { const budget = Number(data.wedding.budget || 0), cost = planned(), going = adults + kids; return budget || cost ? `<section class="card guest-budget"><div><span>Orçamento por convidado</span><strong>${budget && expected ? money(budget / expected) : '—'}</strong><small>${budget && expected ? `orçamento máximo ÷ ${expected} previstos` : 'Defina orçamento e convidados previstos'}</small></div><div><span>Custo atual por pessoa da lista</span><strong>${total ? money(cost / total) : '—'}</strong><small>${money(cost)} orçados ÷ ${total} pessoas</small></div><div><span>Custo por confirmado</span><strong>${going ? money(cost / going) : '—'}</strong><small>${going} ${going === 1 ? 'pessoa confirmada' : 'pessoas confirmadas'}</small></div>${budget && expected && total ? `<div><span>Cada convidado a mais</span><strong>${money((data.expenses.filter(e => e.category === 'Comidas & Buffet').reduce((n, e) => n + Number(e.planned || 0), 0) / Math.max(total, expected, 1)) || budget / expected)}</strong><small>buffet orçado ÷ ${Math.max(total, expected)} pessoas</small></div>` : ''}</section>` : ''; })()}
+  ${newRsvps.length ? `<section class="notice-card rsvp-notice"><div><strong>${newRsvps.length} ${newRsvps.length === 1 ? 'confirmação chegou' : 'confirmações chegaram'} pelo site</strong><p>${newRsvps.slice(0, 4).map(r => `${esc(r.name)} (${r.attending ? `vai · ${r.people} ${r.people === 1 ? 'pessoa' : 'pessoas'}` : 'não vai'})`).join(' · ')}${newRsvps.length > 4 ? '…' : ''}</p></div><button type="button" class="button button-primary" data-action="import-rsvps">Trazer para a lista</button></section>` : ''}
+  <div class="custom-tabs view-tabs" role="tablist"><button type="button" role="tab" data-guest-view="lista" aria-selected="${guestView === 'lista'}">Lista</button><button type="button" role="tab" data-guest-view="familia" aria-selected="${guestView === 'familia'}">Por família</button><button type="button" role="tab" data-guest-view="mesas" aria-selected="${guestView === 'mesas'}">Mesas</button></div>
+  ${guestView === 'mesas' ? '' : `<div class="toolbar"><label class="search-box"><span class="search-mark">${icon('search')}</span><input id="guest-search" type="search" placeholder="Buscar por nome, família ou telefone" value="${esc(guestSearch)}"></label><select id="guest-filter" class="filter-select" aria-label="Grupo"><option>Todos</option>${guestGroups.map(g => `<option ${guestFilter === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select><select id="guest-status-filter" class="filter-select" aria-label="Status"><option>Todos</option>${guestStatuses.map(g => `<option ${guestStatusFilter === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></div>`}
+  ${view}`;
 }
 function renderFinance() {
   const allCategories = allExpenseCategories();
@@ -226,7 +398,7 @@ function renderFinance() {
   const suppliers = [...new Set(data.expenses.map(e => (e.supplier || '').trim()).filter(Boolean))].map(name => { const rows = data.expenses.filter(e => (e.supplier || '').trim() === name); return { name, rows, planned: rows.reduce((a, e) => a + Number(e.planned || 0), 0), due: rows.reduce((a, e) => a + dueOf(e), 0) }; }).sort((a, b) => b.due - a.due || a.name.localeCompare(b.name));
   const dueCell = e => (isGift(e) ? '<span class="due-gift">Presente</span>' : dueOf(e) > 0 ? `<span class="due-value">${money(dueOf(e))}</span>` : '<span class="due-done">Quitado</span>');
   const totals = rows => { const paid = rows.reduce((a, e) => a + (isGift(e) ? 0 : Number(e.paid || 0)), 0), gift = rows.filter(isGift).reduce((a, e) => a + Number(e.planned || 0), 0), left = rows.reduce((a, e) => a + dueOf(e), 0); return `<div class="category-totals"><span class="category-total">${money(paid)} pagos</span>${gift > 0 ? `<span class="category-total category-gift">${money(gift)} em presentes</span>` : ''}${left > 0 ? `<span class="category-total category-due">${money(left)} faltam</span>` : ''}</div>`; };
-  const row = e => { const files = (e.files || []).length + (e.links || []).length; return `<tr><td><span class="person-name">${esc(e.description)}</span>${e.supplier ? `<span class="person-sub">Fornecedor: ${esc(e.supplier)}</span>` : ''}${e.notes ? `<span class="person-sub">${esc(e.notes)}</span>` : ''}</td><td>${money(e.planned)}</td><td>${money(e.paid)}</td><td>${dueCell(e)}</td><td>${badge(e.status, e.status.startsWith('Pago') || isGift(e) ? 'pago' : 'pendente')}</td><td><div class="row-actions"><button class="attach-button" data-action="attach-expense" data-id="${e.id}" aria-label="Anexos (${files})" title="Fotos, PDFs, contratos e links">${icon('clip')}${files ? `<span class="attach-count">${files}</span>` : ''}</button><button data-action="edit-expense" data-id="${e.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-expense" data-id="${e.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`; };
+  const row = e => { const files = (e.files || []).length + (e.links || []).length; return `<tr><td><span class="person-name">${esc(e.description)}</span>${e.supplier ? `<span class="person-sub">Fornecedor: ${esc(e.supplier)}</span>` : ''}${(e.installments || []).length ? (() => { const list = e.installments, next = list.filter(x => !x.paid).sort((a, b) => (a.due || '').localeCompare(b.due || ''))[0]; return `<span class="person-sub inst-sub ${next?.due && next.due < todayIso() ? 'is-late' : ''}">Parcelas: ${list.filter(x => x.paid).length}/${list.length} pagas${next ? ` · próxima ${next.due ? esc(shortDate(next.due)) : 'sem data'} (${money(next.amount)})${next.due && next.due < todayIso() ? ' · vencida' : ''}` : ''}</span>`; })() : ''}${e.notes ? `<span class="person-sub">${esc(e.notes)}</span>` : ''}</td><td>${money(e.planned)}</td><td>${money(e.paid)}</td><td>${dueCell(e)}</td><td>${badge(e.status, e.status.startsWith('Pago') || isGift(e) ? 'pago' : 'pendente')}</td><td><div class="row-actions"><button class="attach-button" data-action="attach-expense" data-id="${e.id}" aria-label="Anexos (${files})" title="Fotos, PDFs, contratos e links">${icon('clip')}${files ? `<span class="attach-count">${files}</span>` : ''}</button><button data-action="installments-expense" data-id="${e.id}" aria-label="Parcelas" title="Parcelas e vencimentos">${icon('calendar')}</button><button data-action="edit-expense" data-id="${e.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-expense" data-id="${e.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`; };
   return `${heading('ORÇAMENTO', 'Financeiro.', 'Organize os valores com clareza, sem perder a leveza.', '<button class="button button-secondary" data-action="export-finance"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-secondary" data-action="import-expenses"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-expense"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar gasto</button>')}
   <section class="budget-overview"><article class="card budget-box"><span>Total orçado</span><strong>${money(planned())}</strong><small>Todos os itens, inclusive presentes</small></article><article class="card budget-box"><span>Total pago</span><strong>${money(spent())}</strong><small>Valores já quitados</small></article><article class="card budget-box"><span>Presentes ganhos</span><strong>${money(gifted())}</strong><small>Não entram no saldo a pagar</small></article><article class="card budget-box budget-due"><span>Saldo a pagar</span><strong>${money(due())}</strong><small>${due() ? 'Ainda falta pagar' : 'Tudo quitado ♡'}</small></article></section>
   ${suppliers.length ? `<section class="card panel supplier-panel"><div class="panel-head"><div><h2 class="panel-title">Por fornecedor</h2><p class="panel-subtitle">Quanto falta pagar para cada um</p></div></div><div class="supplier-list">${suppliers.map(x => `<div class="supplier-row"><span class="supplier-name"><strong>${esc(x.name)}</strong><small>${x.rows.length} ${x.rows.length === 1 ? 'item' : 'itens'} · previsto ${money(x.planned)}</small></span>${x.due > 0 ? `<span class="category-total category-due">${money(x.due)} faltam</span>` : '<span class="category-total">Quitado</span>'}</div>`).join('')}</div></section>` : ''}
@@ -238,10 +410,198 @@ function renderCeremony() {
   <section class="ceremony-print"><header class="print-header"><p class="eyebrow">ROTEIRO DA CERIMÔNIA</p><h1>${esc(data.wedding.couple)}</h1><p>${dateLabel(data.wedding.date)} · ${esc(data.wedding.venue)}</p></header><p class="print-note">Este roteiro é um guia para o cortejo. Obrigada por fazer parte deste momento tão especial!</p>
   <section class="card table-card ceremony-table"><div class="table-wrap"><table><thead><tr><th>#</th><th>Etapa</th><th>Participantes</th><th>Música · artista</th><th>Orientações</th><th class="no-print"></th></tr></thead><tbody>${data.ceremony.length ? data.ceremony.map((c, i) => `<tr class="ceremony-row"><td><span class="step-index">${String(i + 1).padStart(2, '0')}</span></td><td><strong>${esc(c.step)}</strong></td><td>${esc(c.participants)}</td><td class="music-cell"><div class="music-title">${esc(c.music)}</div><div class="music-artist">${esc(c.artist)}</div></td><td><span class="instructions">${esc(c.notes || '—')}</span></td><td class="no-print"><div class="row-actions"><button data-action="edit-ceremony" data-id="${c.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-ceremony" data-id="${c.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`).join('') : `<tr><td colspan="6">${empty('Adicione as etapas da cerimônia.')}</td></tr>`}</tbody></table></div></section><section class="card print-note orientation-note"><h2>Orientações para os Padrinhos e Auxiliares</h2><ul><li>Evitem levar celular e chaves nos bolsos durante a cerimônia.</li><li>Caminhem em ritmo tranquilo, mantendo espaço entre os casais.</li><li>Sigam o posicionamento combinado e cumprimentem os noivos com calma no altar.</li></ul></section></section>`;
 }
+function loadSiteRsvps() {
+  if (!plannerSlug || siteRsvps !== null) return;
+  siteRsvps = [];
+  getDocs(collection(db, 'sites', plannerSlug, 'rsvps')).then(snap => {
+    siteRsvps = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.product === 'site').map(r => ({ id: r.id, name: String(r.name || '').trim(), people: Number(r.people || 0), attending: Boolean(r.attending), message: r.message || '' })).filter(r => r.name);
+    if (currentPage === 'convidados' && siteRsvps.some(r => !data.importedRsvps.includes(r.id))) render();
+  }).catch(error => console.warn('Confirmações do site indisponíveis:', error.code || error));
+}
+function importRsvps() {
+  let added = 0, updated = 0;
+  (siteRsvps || []).filter(r => !data.importedRsvps.includes(r.id)).forEach(r => {
+    const status = r.attending ? 'Confirmado' : 'Recusado', guest = data.guests.find(g => sameName(g.name, r.name));
+    if (guest) { guest.status = status; if (r.attending && r.people - 1 > Number(guest.companions || 0) + Number(guest.children || 0)) guest.companions = r.people - 1 - Number(guest.children || 0); updated++; }
+    else { data.guests.push({ id: uid('g'), name: r.name, phone: '', group: 'Amigos', status, companions: Math.max(0, r.people - 1), children: 0, family: '', dietary: '', tableId: '', notes: r.message ? `Recado: ${r.message}`.slice(0, 200) : '', fromSite: true }); added++; }
+    data.importedRsvps.push(r.id);
+  });
+  save(`${updated} ${updated === 1 ? 'convidado atualizado' : 'convidados atualizados'} e ${added} ${added === 1 ? 'novo' : 'novos'} na lista.`);
+  render();
+}
+function exportGuestsPdf() {
+  const doc = pdfBase('Lista de convidados para o buffet'); if (!doc) return;
+  const list = data.guests.filter(g => g.status === 'Confirmado').sort((a, b) => a.name.localeCompare(b.name));
+  const adults = list.reduce((n, g) => n + 1 + Number(g.companions || 0), 0), kids = list.reduce((n, g) => n + Number(g.children || 0), 0);
+  const tableName = id => data.tables.find(t => t.id === id)?.name || '—';
+  pdfHeading(doc, 'Lista de convidados confirmados', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(45);
+  doc.text(`Confirmados: ${adults + kids} pessoas (${adults} adultos e ${kids} crianças)     Com restrição alimentar: ${list.filter(g => g.dietary).length}`, 14, 39);
+  doc.autoTable({ startY: 46, head: [['Convidado', 'Família', 'Grupo', 'Adultos', 'Crianças', 'Restrição alimentar', 'Mesa']], body: list.map(g => [g.name, g.family || '—', g.group, 1 + Number(g.companions || 0), Number(g.children || 0), g.dietary || '—', tableName(g.tableId)]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, rowPageBreak: 'avoid', columnStyles: { 3: { halign: 'center' }, 4: { halign: 'center' } } });
+  const diets = Object.entries(list.filter(g => g.dietary).reduce((acc, g) => ({ ...acc, [g.dietary]: (acc[g.dietary] || 0) + 1 }), {}));
+  if (diets.length) doc.autoTable({ startY: doc.lastAutoTable.finalY + 8, head: [['Restrição', 'Quantidade']], body: diets, theme: 'grid', margin: { left: 14, right: 160 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 } });
+  pdfFooter(doc); doc.save('lista-convidados-buffet.pdf'); notify('Lista para o buffet exportada em PDF.');
+}
+function exportGuestsCsv() {
+  const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['Nome', 'Telefone', 'Grupo', 'Família', 'Status', 'Acompanhantes', 'Crianças', 'Restrição alimentar', 'Mesa', 'Observações'], ...data.guests.map(g => [g.name, g.phone, g.group, g.family, g.status, g.companions || 0, g.children || 0, g.dietary, data.tables.find(t => t.id === g.tableId)?.name || '', g.notes])];
+  const blob = new Blob(['\ufeff' + rows.map(r => r.map(cell).join(';')).join('\n')], { type: 'text/csv;charset=utf-8' });
+  const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'convidados.csv' });
+  document.body.append(link); link.click(); link.remove();
+  notify('Planilha de convidados baixada.');
+}
+function dayDTimeline() {
+  const wedding = data.wedding.date;
+  const items = [
+    ...data.ceremonial.map(c => ({ time: hourOf(c.time), title: c.title, who: c.responsible || '', kind: 'cerimonial', track: c.track || 'Geral', done: c.status === 'Concluído' })),
+    ...(data.vendors || []).filter(v => v.status === 'Contratado' && v.arrival).map(v => ({ time: hourOf(v.arrival), title: `Chegada: ${v.name}`, who: v.contact || v.name, kind: 'fornecedor', track: 'Equipe' })),
+    ...data.tasks.filter(t => wedding && t.date === wedding).map(t => ({ time: hourOf(t.time), title: t.title, who: t.responsible || '', kind: 'tarefa', track: 'Geral', done: t.status === 'Concluído' })),
+    ...data.places.filter(p => p.time).map(p => ({ time: hourOf(p.time), title: p.name, who: p.address, kind: 'lugar', track: 'Geral' })),
+  ];
+  return items.sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
+}
+function personScripts() {
+  const map = new Map();
+  const add = (name, phone, item) => { const key = String(name || '').trim(); if (!key) return; const entry = map.get(key) || { name: key, phone: '', items: [] }; entry.phone ||= phone || ''; if (item) entry.items.push(item); map.set(key, entry); };
+  const phones = knownPeople();
+  data.ceremonial.forEach(c => String(c.responsible || '').split(/\s*[,/;]\s*|\s+e\s+/).forEach(name => add(name, phones.get(name), { time: hourOf(c.time), text: c.title, details: c.details })));
+  data.tasks.filter(t => data.wedding.date && t.date === data.wedding.date && t.responsible).forEach(t => add(t.responsible, t.responsiblePhone || phones.get(t.responsible), { time: hourOf(t.time), text: t.title, details: t.description }));
+  ['Noiva', 'Noivo'].forEach(track => data.ceremonial.filter(c => (c.track || 'Geral') === track || (c.track || 'Geral') === 'Geral').forEach(c => add(track === 'Noiva' ? 'Noiva' : 'Noivo', '', { time: hourOf(c.time), text: c.title, details: c.details }))); if (!data.ceremonial.some(c => c.track === 'Noiva')) map.delete('Noiva'); if (!data.ceremonial.some(c => c.track === 'Noivo')) map.delete('Noivo');
+  (data.vendors || []).filter(v => v.status === 'Contratado').forEach(v => add(v.name, v.phone, v.arrival ? { time: hourOf(v.arrival), text: 'Chegada e montagem', details: v.contact ? `Contato: ${v.contact}` : '' } : null));
+  return [...map.values()].filter(p => p.items.length).map(p => ({ ...p, items: p.items.sort((a, b) => (a.time || '99').localeCompare(b.time || '99')) })).sort((a, b) => a.name.localeCompare(b.name));
+}
+function scriptText(person) {
+  const contacts = data.emergencyContacts.slice(0, 3).map(c => `${c.name}${c.role ? ` (${c.role})` : ''}: ${c.phone}`);
+  return [`Oi, ${person.name.split(' ')[0]}! ♡ Seu roteiro do casamento de ${data.wedding.couple}${data.wedding.date ? ` (${dateLabel(data.wedding.date)})` : ''}:`, '', ...person.items.map(i => `• ${i.time || '--:--'} ${i.text}${i.details ? ` — ${i.details}` : ''}`), '', `Local: ${data.wedding.venue || 'a confirmar'}`, ...data.places.map(p => `${p.name}: ${p.address}`), ...(contacts.length ? ['', 'Contatos de emergência:', ...contacts] : []), '', 'Obrigado por fazer parte desse dia!'].join('\n');
+}
+function openScripts() {
+  const list = personScripts();
+  openModal('Roteiro por pessoa', list.length ? `<p class="confirm-copy">Cada pessoa recebe só o que é dela: horários, endereços e contatos de emergência. Envie pelo WhatsApp ou baixe em PDF.</p><div class="script-list" style="grid-column:1/-1">${list.map((p, i) => `<div class="script-row"><span><strong>${esc(p.name)}</strong><small>${p.items.length} ${p.items.length === 1 ? 'compromisso' : 'compromissos'}${p.items[0]?.time ? ` · a partir das ${esc(p.items[0].time)}` : ''}</small></span><a class="button button-secondary button-sm" href="${esc(waLink(p.phone, scriptText(p)))}" target="_blank" rel="noopener">${icon('chat')}WhatsApp</a><button type="button" class="button button-secondary button-sm" data-script-pdf="${i}">PDF</button></div>`).join('')}</div>` : '<p class="confirm-copy">Ainda não há responsáveis no Cerimonial do dia D nem fornecedores contratados com horário de chegada. Preencha essas partes e os roteiros aparecem aqui.</p>', () => {});
+  $('#modal-submit').textContent = 'Fechar';
+  $('#modal-fields').querySelectorAll('[data-script-pdf]').forEach(b => b.addEventListener('click', () => exportScriptPdf(list[Number(b.dataset.scriptPdf)])));
+}
+function exportScriptPdf(person) {
+  const doc = pdfBase(`Roteiro de ${person.name}`); if (!doc) return;
+  pdfHeading(doc, `Roteiro de ${person.name}`, `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
+  doc.autoTable({ startY: 36, head: [['Horário', 'O que fazer', 'Detalhes']], body: person.items.map(i => [i.time || '—', i.text, i.details || '']), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 10, cellPadding: 3 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, columnStyles: { 0: { cellWidth: 24 } } });
+  const extra = [...data.places.map(p => [p.name, p.address, p.notes || '']), ...data.emergencyContacts.map(c => [c.role || 'Emergência', c.name, c.phone])];
+  if (extra.length) doc.autoTable({ startY: doc.lastAutoTable.finalY + 8, head: [['Endereços e contatos', '', '']], body: extra, theme: 'grid', margin: { left: 14, right: 14 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 } });
+  pdfFooter(doc); doc.save(`roteiro-${slugOf(person.name)}.pdf`); notify(`Roteiro de ${person.name} exportado.`);
+}
+function exportDayDPdf() {
+  const doc = pdfBase('Central do Dia D'); if (!doc) return;
+  pdfHeading(doc, 'Central do Dia D', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
+  const table = (startY, head, body) => doc.autoTable({ startY, head: [head], body: body.length ? body : [head.map(() => '—')], theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, rowPageBreak: 'avoid' });
+  table(36, ['Horário', 'O quê', 'Quem / onde'], dayDTimeline().map(i => [i.time || '—', i.title, i.who]));
+  table(doc.lastAutoTable.finalY + 8, ['Contato de emergência', 'Função', 'Telefone'], data.emergencyContacts.map(c => [c.name, c.role || '', c.phone]));
+  table(doc.lastAutoTable.finalY + 8, ['Se acontecer...', 'O que fazer', 'Quem resolve'], data.planB.map(p => [p.problem, p.solution, p.owner || '']));
+  table(doc.lastAutoTable.finalY + 8, ['Kit de emergência', 'Separado'], data.kit.map(k => [k.item, k.done ? 'Sim' : '']));
+  pdfFooter(doc); doc.save('central-do-dia-d.pdf'); notify('Central do Dia D exportada em PDF.');
+}
+function renderDayD() {
+  const countdown = countdownState(), fullTimeline = dayDTimeline(), timeline = fullTimeline.filter(i => dayTrack === 'Tudo' || i.track === dayTrack || (i.track === 'Geral' && dayTrack !== 'Equipe')), hiredVendors = (data.vendors || []).filter(v => v.status === 'Contratado');
+  const tel = phone => String(phone || '').replace(/[^\d+]/g, '');
+  const kitDone = data.kit.filter(k => k.done).length;
+  return `${heading('DIA D', 'Central do Dia D.', 'O roteiro do grande dia, a equipe, os endereços e o que fazer se algo sair do plano.', `<button class="button button-secondary" data-action="export-dayd">${icon('download')}Exportar PDF</button><button class="button button-primary" data-action="person-scripts">${icon('users')}Roteiro por pessoa</button>`)}
+  <div class="summary-row"><span class="summary-chip">${countdown.unknown ? 'Data a definir' : countdown.complete ? 'Casamento realizado ♡' : `Faltam <strong>${countdown.days}</strong> dias`}</span><span class="summary-chip">Na linha do tempo <strong>${timeline.length}</strong></span><span class="summary-chip">Fornecedores com horário <strong>${hiredVendors.filter(v => v.arrival).length}/${hiredVendors.length}</strong></span><span class="summary-chip">Kit separado <strong>${kitDone}/${data.kit.length}</strong></span></div>
+  <div class="dayd-grid">
+    <article class="card panel dayd-timeline"><div class="panel-head"><div><h2 class="panel-title">Linha do tempo do dia</h2><p class="panel-subtitle">${dayTrack === 'Noiva' ? 'Cronograma da noiva (com os momentos de todos)' : dayTrack === 'Noivo' ? 'Cronograma do noivo (com os momentos de todos)' : dayTrack === 'Equipe' ? 'Chegada e montagem dos fornecedores' : 'Cerimonial, fornecedores e tarefas do dia, em ordem'}</p></div><button class="text-button" data-go="cerimonial">Editar cerimonial →</button></div>
+      <div class="custom-tabs view-tabs track-tabs" role="tablist">${['Tudo', 'Noiva', 'Noivo', 'Equipe'].map(t => `<button type="button" role="tab" data-day-track="${t}" aria-selected="${dayTrack === t}">${t}</button>`).join('')}</div>
+      ${timeline.length ? `<ol class="dayd-list">${timeline.map(i => `<li class="dayd-${i.kind} ${i.done ? 'is-done' : ''}"><span class="dayd-time">${esc(i.time || '—')}</span><span class="dayd-mark" aria-hidden="true"></span><span><strong>${esc(i.title)}${i.track === 'Noiva' || i.track === 'Noivo' ? ` <em class="track-tag track-${slugOf(i.track)}">${i.track}</em>` : ''}</strong>${i.who ? `<small>${esc(i.who)}</small>` : ''}</span></li>`).join('')}</ol>` : empty(fullTimeline.length ? 'Nada neste cronograma ainda. No Cerimonial do dia D, escolha "Noiva" ou "Noivo" em "Cronograma de quem".' : 'Monte o cerimonial do dia e defina o horário de chegada dos fornecedores.')}</article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Chegada dos fornecedores</h2><p class="panel-subtitle">Horário combinado com cada um</p></div></div>
+      ${hiredVendors.length ? `<div class="dayd-rows">${hiredVendors.map(v => `<div class="dayd-row"><span><strong>${esc(v.name)}</strong><small>${esc(v.category)}${v.contact ? ` · ${esc(v.contact)}` : ''}</small></span><input type="time" value="${esc(v.arrival || '')}" data-vendor-arrival="${v.id}" aria-label="Chegada de ${esc(v.name)}">${v.phone ? `<a class="icon-button" href="${esc(waLink(v.phone, `Oi! Confirmando a chegada no casamento de ${data.wedding.couple}${v.arrival ? ` às ${v.arrival}` : ''}.`))}" target="_blank" rel="noopener" aria-label="WhatsApp">${icon('chat')}</a>` : ''}</div>`).join('')}</div>` : `<p class="priority-empty">Os fornecedores contratados na aba <button class="text-button" data-go="fornecedores">Fornecedores</button> aparecem aqui.</p>`}</article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Contatos de emergência</h2><p class="panel-subtitle">Quem chamar se precisar</p></div><button class="text-button" data-action="add-contact">+ Contato</button></div>
+      ${data.emergencyContacts.length ? `<div class="dayd-rows">${data.emergencyContacts.map(c => `<div class="dayd-row"><span><strong>${esc(c.name)}</strong><small>${esc(c.role || 'Contato')} · ${esc(c.phone)}</small></span><a class="icon-button" href="tel:${esc(tel(c.phone))}" aria-label="Ligar">${icon('phone')}</a><a class="icon-button" href="${esc(waLink(c.phone, ''))}" target="_blank" rel="noopener" aria-label="WhatsApp">${icon('chat')}</a><div class="row-actions"><button data-action="edit-contact" data-id="${c.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-contact" data-id="${c.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('')}</div>` : '<p class="priority-empty">Cerimonialista, padrinhos, motorista, alguém da família... quem resolve as coisas no dia.</p>'}</article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Endereços</h2><p class="panel-subtitle">Making of, cerimônia, festa, hotel</p></div><button class="text-button" data-action="add-place">+ Endereço</button></div>
+      <div class="dayd-rows">${data.wedding.venue ? `<div class="dayd-row"><span><strong>${esc(data.wedding.venue)}</strong><small>Local do casamento${data.wedding.time ? ` · ${esc(data.wedding.time)}` : ''}</small></span><a class="icon-button" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(data.wedding.venue)}" target="_blank" rel="noopener" aria-label="Mapa">${icon('pin')}</a></div>` : ''}${data.places.map(p => `<div class="dayd-row"><span><strong>${esc(p.name)}${p.time ? ` · ${esc(p.time)}` : ''}</strong><small>${esc(p.address)}${p.notes ? ` · ${esc(p.notes)}` : ''}</small></span><a class="icon-button" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}" target="_blank" rel="noopener" aria-label="Mapa">${icon('pin')}</a><div class="row-actions"><button data-action="edit-place" data-id="${p.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-place" data-id="${p.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('')}</div></article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Plano B</h2><p class="panel-subtitle">Resolva antes do imprevisto</p></div><button class="text-button" data-action="add-planb">+ Situação</button></div>
+      <div class="planb-list">${data.planB.map(p => `<div class="planb-item"><span class="planb-icon">${icon('shield')}</span><div><strong>Se: ${esc(p.problem)}</strong><p>${esc(p.solution)}</p>${p.owner ? `<small>Quem resolve: ${esc(p.owner)}</small>` : ''}</div><div class="row-actions"><button data-action="edit-planb" data-id="${p.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-planb" data-id="${p.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('')}</div></article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Kit de emergência</h2><p class="panel-subtitle">${kitDone} de ${data.kit.length} itens separados</p></div></div>
+      <form class="priority-add kit-add" id="kit-add"><input name="item" placeholder="Adicionar item..." aria-label="Novo item do kit" required autocomplete="off"><button class="button button-primary button-sm" type="submit" aria-label="Adicionar">${icon('plus')}</button></form>
+      <ul class="kit-list">${data.kit.map(k => `<li class="${k.done ? 'is-done' : ''}"><label><input type="checkbox" class="task-check" data-kit-check="${k.id}" ${k.done ? 'checked' : ''}><span>${esc(k.item)}</span></label><button type="button" class="icon-button" data-action="delete-kit" data-id="${k.id}" aria-label="Remover">${icon('trash')}</button></li>`).join('')}</ul></article>
+  </div>`;
+}
+function renderHoneymoon() {
+  const h = data.honeymoon, budget = Number(h.budget || 0), saved = Number(h.saved || 0);
+  const live = data.hmBookings.filter(b => b.status !== 'Cancelado' && b.status !== 'Opção');
+  const booked = live.reduce((n, b) => n + Number(b.price || 0), 0), paid = live.reduce((n, b) => n + Number(b.paid || 0), 0);
+  const nights = h.start && h.end ? Math.max(0, Math.round((fromIso(h.end) - fromIso(h.start)) / 864e5)) : 0;
+  const untilTrip = h.start ? Math.round((fromIso(h.start) - fromIso(todayIso())) / 864e5) : null;
+  const toSave = Math.max(0, budget - saved), savedRatio = budget ? Math.min(100, Math.round(saved / budget * 100)) : 0;
+  const board = data.hmBoard[0] || { files: [], links: [] };
+  const types = bookingTypes.filter(t => data.hmBookings.some(b => b.type === t));
+  const bookingRow = (b, cheapest) => { const files = (b.files || []).length + (b.links || []).length; return `<tr><td><span class="person-name">${esc(b.title)}${cheapest ? ' <span class="vendor-flag">Menor preço</span>' : ''}</span>${b.code ? `<span class="person-sub">Código: ${esc(b.code)}</span>` : ''}${b.notes ? `<span class="person-sub">${esc(b.notes)}</span>` : ''}</td><td>${b.checkin ? esc(shortDate(b.checkin)) : '—'}${b.checkout ? ` → ${esc(shortDate(b.checkout))}` : ''}</td><td>${money(b.price)}</td><td><select class="status-select" data-booking-status="${b.id}" aria-label="Status">${bookingStatuses.map(st => `<option ${b.status === st ? 'selected' : ''}>${st}</option>`).join('')}</select></td><td><div class="row-actions">${b.link ? `<a class="icon-button" href="${esc(safeNoteUrl(/^[a-z]+:/i.test(b.link) ? b.link : `https://${b.link}`))}" target="_blank" rel="noopener noreferrer" aria-label="Abrir link">${icon('link')}</a>` : ''}<button class="attach-button" data-action="attach-booking" data-id="${b.id}" aria-label="Anexos">${icon('clip')}${files ? `<span class="attach-count">${files}</span>` : ''}</button><button data-action="edit-hmBooking" data-id="${b.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-hmBooking" data-id="${b.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`; };
+  const days = [...new Set(data.hmItinerary.map(i => i.date))].sort();
+  const packDone = data.hmPacking.filter(m => m.done).length;
+  return `${heading('LUA DE MEL', 'Nossa viagem.', 'Destinos, reservas, roteiro e malas, com o orçamento separado do casamento.', `<button class="button button-primary" data-action="edit-honeymoon">${icon('plane')}Detalhes da viagem</button>`)}
+  <section class="card wedding-profile honeymoon-hero"><div class="profile-info"><p class="eyebrow">NOSSA VIAGEM DOS SONHOS</p><h2>${esc(h.destination || 'Para onde vamos?')}</h2><ul>${h.start ? `<li>${icon('calendar')}${esc(dateLabel(h.start))}${h.end ? ` a ${esc(dateLabel(h.end))}` : ''}${nights ? ` · ${nights} noites` : ''}</li>` : '<li>' + icon('calendar') + 'Datas a definir</li>'}${untilTrip !== null && untilTrip >= 0 ? `<li>${icon('plane')}${untilTrip === 0 ? 'É hoje! Boa viagem ♡' : `Faltam ${untilTrip} dias para a viagem`}</li>` : ''}</ul></div>
+    <div class="profile-boxes"><div class="profile-box"><span>Orçamento da viagem</span><strong class="is-accent">${budget ? money(budget) : '—'}</strong><small>Reservado: ${money(booked)} · pago: ${money(paid)}</small></div><div class="profile-box"><span>Já economizado</span><strong>${money(saved)}</strong>${budget ? `<div class="mini-track"><span style="width:${savedRatio}%"></span></div><small>${savedRatio}% da meta</small>` : ''}</div><div class="profile-box"><span>Falta economizar</span><strong class="${toSave ? 'is-over' : ''}">${budget ? money(toSave) : '—'}</strong><small>${budget && booked > budget ? `As reservas passam do orçamento em ${money(booked - budget)}` : 'Atualize o valor economizado nos detalhes'}</small></div></div></section>
+  <div class="dayd-grid">
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Destinos desejados</h2><p class="panel-subtitle">Compare e escolha o seu</p></div><button class="text-button" data-action="add-hmDestination">+ Destino</button></div>
+      ${data.hmDestinations.length ? `<div class="dayd-rows">${data.hmDestinations.map(d => `<div class="dayd-row ${h.destination === d.name ? 'is-chosen' : ''}"><span><strong>${esc(d.name)}${h.destination === d.name ? ' ♡' : ''}</strong><small>${[d.estimate ? `cerca de ${money(d.estimate)}` : '', d.season ? `melhor época: ${esc(d.season)}` : '', d.notes ? esc(d.notes) : ''].filter(Boolean).join(' · ') || 'Sem detalhes'}</small></span>${h.destination === d.name ? '' : `<button type="button" class="button button-secondary button-sm" data-choose-destination="${d.id}">Escolher</button>`}<div class="row-actions"><button data-action="edit-hmDestination" data-id="${d.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-hmDestination" data-id="${d.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('')}</div>` : '<p class="priority-empty">Anote os lugares que vocês sonham conhecer, com o custo estimado.</p>'}</article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Nossa viagem dos sonhos</h2><p class="panel-subtitle">Fotos, links e ideias</p></div><button class="text-button" data-action="edit-board">+ Fotos e links</button></div>
+      ${(board.files || []).length || (board.links || []).length ? `<div class="dream-grid">${(board.files || []).filter(f => f.type.startsWith('image/')).map(f => `<span class="dream-photo" data-dream-file="${f.id}"><img alt="${esc(f.name)}"></span>`).join('')}</div>${(board.links || []).length ? `<ul class="dream-links">${board.links.map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon('link')}${esc(l.title || l.url)}</a></li>`).join('')}</ul>` : ''}` : '<p class="priority-empty">Salve fotos de inspiração, vídeos e links de hotéis e passeios.</p>'}</article>
+  </div>
+  <section class="card panel hm-section"><div class="panel-head"><div><h2 class="panel-title">Hospedagens, passagens e passeios</h2><p class="panel-subtitle">Deixe como "Opção" para comparar e mude para "Reservado" quando fechar</p></div><button class="button button-secondary button-sm" data-action="add-hmBooking">${icon('plus')}Reserva ou opção</button></div>
+    ${types.length ? types.map(t => { const list = data.hmBookings.filter(b => b.type === t), options = list.filter(b => b.status === 'Opção' && Number(b.price) > 0), cheapest = options.length > 1 ? options.reduce((a, b) => (Number(b.price) < Number(a.price) ? b : a)).id : ''; return `<h3 class="hm-type">${esc(t)}</h3><div class="table-wrap"><table class="hm-table"><thead><tr><th>Reserva</th><th>Datas</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${list.map(b => bookingRow(b, b.id === cheapest)).join('')}</tbody></table></div>`; }).join('') : empty('Cadastre hotéis, voos e passeios para comparar e controlar as reservas.')}</section>
+  <div class="dayd-grid">
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Roteiro por dia</h2><p class="panel-subtitle">Passeios e restaurantes</p></div><button class="text-button" data-action="add-hmItinerary">+ Passeio</button></div>
+      ${days.length ? days.map(day => `<h3 class="hm-type">${esc(shortDate(day))}</h3><div class="dayd-rows">${data.hmItinerary.filter(i => i.date === day).sort((a, b) => (a.time || '99').localeCompare(b.time || '99')).map(i => `<div class="dayd-row"><span><strong>${i.time ? `${esc(i.time)} · ` : ''}${esc(i.activity)}</strong>${i.place || i.notes ? `<small>${esc([i.place, i.notes].filter(Boolean).join(' · '))}</small>` : ''}</span>${i.place ? `<a class="icon-button" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(i.place)}" target="_blank" rel="noopener" aria-label="Mapa">${icon('pin')}</a>` : ''}<div class="row-actions"><button data-action="edit-hmItinerary" data-id="${i.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-hmItinerary" data-id="${i.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('')}</div>`).join('') : '<p class="priority-empty">Monte o roteiro de cada dia da viagem.</p>'}</article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Malas e documentos</h2><p class="panel-subtitle">${packDone} de ${data.hmPacking.length} itens prontos · checklist pré-viagem</p></div></div>
+      <form class="priority-add" id="pack-add"><input name="item" placeholder="Adicionar item..." aria-label="Novo item" required autocomplete="off"><select name="category" aria-label="Categoria">${packingCategories.map(c => `<option>${c}</option>`).join('')}</select><button class="button button-primary button-sm" type="submit" aria-label="Adicionar">${icon('plus')}</button></form>
+      ${packingCategories.filter(c => data.hmPacking.some(m => m.category === c)).map(c => `<h3 class="hm-type">${c}</h3><ul class="kit-list">${data.hmPacking.filter(m => m.category === c).map(m => `<li class="${m.done ? 'is-done' : ''}"><label><input type="checkbox" class="task-check" data-pack-check="${m.id}" ${m.done ? 'checked' : ''}><span>${esc(m.item)}</span></label><button type="button" class="icon-button" data-action="delete-pack" data-id="${m.id}" aria-label="Remover">${icon('trash')}</button></li>`).join('')}</ul>`).join('')}</article>
+  </div>`;
+}
+// Todos os arquivos e links do planejamento, de onde quer que tenham sido anexados.
+function allDocuments() {
+  const sources = [
+    ['documents', 'Documentos', r => r.title], ['expenses', 'Gastos', r => r.description], ['vendors', 'Fornecedores', r => r.name],
+    ['tasks', 'Tarefas', r => r.title], ['hmBookings', 'Lua de mel', r => r.title], ['hmBoard', 'Lua de mel', r => r.title], ['inspirations', 'Inspirações', r => r.title],
+  ];
+  return sources.flatMap(([coll, origin, label]) => (data[coll] || []).flatMap(record => [
+    ...(record.files || []).map(file => ({ kind: 'file', coll, origin, record, label: label(record), file, name: file.name, date: file.addedAt || '' })),
+    ...(record.links || []).map(link => ({ kind: 'link', coll, origin, record, label: label(record), link, name: link.title || link.url, date: '' })),
+  ]));
+}
+function openFile(file) {
+  const win = window.open('', '_blank');
+  readAttachment(file).then(url => { const blobUrl = URL.createObjectURL(dataUrlToBlob(url)); if (win) win.location.href = blobUrl; else location.href = blobUrl; })
+    .catch(e => { console.error(e); win?.close(); notify('Não foi possível abrir o arquivo.'); });
+}
+function renderDocuments() {
+  const all = allDocuments(), origins = ['Todos', ...new Set(all.map(d => d.origin))];
+  const visible = all.filter(d => (docFilter === 'Todos' || d.origin === docFilter) && `${d.name} ${d.label}`.toLowerCase().includes(docSearch.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+  const checkDone = data.docChecklist.filter(d => d.done).length;
+  const ext = d => d.kind === 'link' ? icon('link') : d.file.type.startsWith('image/') ? `<img alt="" data-thumb="${d.coll}|${d.record.id}|${d.file.id}">` : `<b>${esc((d.name.split('.').pop() || 'arq').slice(0, 4).toUpperCase())}</b>`;
+  return `${heading('DOCUMENTOS', 'Central de documentos.', 'Contratos, comprovantes, notas fiscais e documentos da cerimônia, todos num lugar só. Inclui os arquivos anexados nos gastos, fornecedores, tarefas e lua de mel.', `<button class="button button-primary" data-action="add-document">${icon('plus')}Novo documento</button>`)}
+  <div class="summary-row"><span class="summary-chip">Arquivos <strong>${all.filter(d => d.kind === 'file').length}</strong></span><span class="summary-chip">Links <strong>${all.filter(d => d.kind === 'link').length}</strong></span><span class="summary-chip">Documentos essenciais <strong>${checkDone}/${data.docChecklist.length}</strong></span></div>
+  <div class="dayd-grid">
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Documentos essenciais</h2><p class="panel-subtitle">O que precisa estar pronto para o casamento</p></div></div>
+      <form class="priority-add kit-add" id="doccheck-add"><input name="item" placeholder="Adicionar documento..." aria-label="Novo documento essencial" required autocomplete="off"><button class="button button-primary button-sm" type="submit" aria-label="Adicionar">${icon('plus')}</button></form>
+      <ul class="kit-list">${data.docChecklist.map(k => `<li class="${k.done ? 'is-done' : ''}"><label><input type="checkbox" class="task-check" data-doccheck="${k.id}" ${k.done ? 'checked' : ''}><span>${esc(k.item)}</span></label><button type="button" class="icon-button" data-action="delete-doccheck" data-id="${k.id}" aria-label="Remover">${icon('trash')}</button></li>`).join('')}</ul></article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Meus documentos</h2><p class="panel-subtitle">Pastas com arquivos e links</p></div><button class="text-button" data-action="add-document">+ Documento</button></div>
+      ${data.documents.length ? `<div class="dayd-rows">${data.documents.map(d => { const n = (d.files || []).length + (d.links || []).length; return `<div class="dayd-row"><span><strong>${esc(d.title)}</strong><small>${esc(d.category || 'Outros')}${d.date ? ` · ${esc(shortDate(d.date))}` : ''} · ${n} ${n === 1 ? 'anexo' : 'anexos'}${d.notes ? ` · ${esc(d.notes)}` : ''}</small></span><button type="button" class="button button-secondary button-sm" data-action="attach-document" data-id="${d.id}">${icon('clip')}Anexos</button><div class="row-actions"><button data-action="edit-document" data-id="${d.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-document" data-id="${d.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`; }).join('')}</div>` : '<p class="priority-empty">Crie uma pasta para cada documento (certidões, contratos, notas) e anexe os arquivos.</p>'}</article>
+  </div>
+  <section class="card panel"><div class="panel-head"><div><h2 class="panel-title">Todos os arquivos</h2><p class="panel-subtitle">${visible.length} ${visible.length === 1 ? 'item' : 'itens'}</p></div></div>
+    <div class="toolbar"><label class="search-box"><span class="search-mark">${icon('search')}</span><input id="doc-search" type="search" placeholder="Buscar arquivo ou origem" value="${esc(docSearch)}"></label><div class="ask-chips doc-filters">${origins.map(o => `<button type="button" class="ask-chip ${docFilter === o ? 'is-on' : ''}" data-doc-filter="${esc(o)}">${esc(o)}</button>`).join('')}</div></div>
+    ${visible.length ? `<div class="doc-list">${visible.map((d, i) => `<div class="attach-item"><span class="attach-thumb">${ext(d)}</span><span class="attach-name"><strong>${esc(d.name)}</strong><small>${esc(d.origin)} · ${esc(d.label)}${d.kind === 'file' ? ` · ${fileSize(d.file.size)}` : ''}</small></span>${d.kind === 'link' ? `<a class="button button-secondary button-sm" href="${esc(d.link.url)}" target="_blank" rel="noopener noreferrer">Abrir</a>` : `<button type="button" class="button button-secondary button-sm" data-open-doc="${i}">Abrir</button>`}<button type="button" class="icon-button" data-doc-source="${i}" aria-label="Ver onde está anexado" title="Ver onde está anexado">${icon('clip')}</button></div>`).join('')}</div>` : empty(all.length ? 'Nada encontrado com essa busca.' : 'Os arquivos que vocês anexarem em qualquer parte do planejamento aparecem aqui.')}</section>`;
+}
+function renderInspirations() {
+  const cover = b => (b.files || []).filter(f => f.type.startsWith('image/')).slice(0, 4);
+  return `${heading('INSPIRAÇÕES', 'Inspirações.', 'Murais com fotos, links e cores para cada parte do casamento, prontos para mostrar aos fornecedores.', `<button class="button button-primary" data-action="add-inspiration">${icon('plus')}Novo mural</button>`)}
+  <div class="insp-grid">${data.inspirations.map(b => { const pics = cover(b), n = (b.files || []).length, l = (b.links || []).length; return `<article class="card insp-card">
+    <button type="button" class="insp-mosaic count-${pics.length}" data-action="attach-inspiration" data-id="${b.id}" aria-label="Fotos e links de ${esc(b.title)}">${pics.length ? pics.map(f => `<span><img alt="" data-thumb="inspirations|${b.id}|${f.id}"></span>`).join('') : `<span class="insp-empty">${icon('plus')}Adicionar fotos</span>`}</button>
+    <div class="insp-body"><div class="insp-title"><h3>${esc(b.title)}</h3><div class="row-actions"><button data-action="edit-inspiration" data-id="${b.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-inspiration" data-id="${b.id}" aria-label="Excluir">${icon('trash')}</button></div></div>
+      <small>${n} ${n === 1 ? 'foto' : 'fotos e arquivos'} · ${l} ${l === 1 ? 'link' : 'links'}</small>
+      ${b.notes ? `<p>${esc(b.notes)}</p>` : ''}
+      ${b.colors?.length ? `<div class="insp-colors">${b.colors.map(c => `<span style="background:${esc(c)}" title="${esc(c)}"></span>`).join('')}</div>` : ''}
+      ${l ? `<ul class="dream-links">${b.links.slice(0, 3).map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${icon('link')}${esc(x.title || x.url)}</a></li>`).join('')}</ul>` : ''}
+    </div></article>`; }).join('')}</div>`;
+}
 function renderCeremonial() {
   const ceremonial = [...data.ceremonial].sort((a, b) => a.time.localeCompare(b.time)), done = ceremonial.filter(item => item.status === 'Concluído').length;
   return `${heading('DIA DO CASAMENTO', 'Cerimonial do dia D.', 'Sequência operacional para conduzir o dia com segurança.', '<button class="button button-secondary" data-action="export-ceremonial"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-primary" data-action="add-ceremonial"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar horário</button>')}<div class="summary-row"><span class="summary-chip">Horários <strong>${ceremonial.length}</strong></span><span class="summary-chip">Concluídos <strong>${done}</strong></span><span class="summary-chip">A fazer <strong>${ceremonial.length - done}</strong></span><span class="summary-chip">Início da cerimônia <strong>${esc(data.wedding.time || '11:30')}</strong></span></div>
-  <article class="card ceremonial-card">${ceremonial.length ? ceremonial.map(item => `<div class="ceremonial-row ${item.status === 'Concluído' ? 'is-complete' : ''}"><time>${esc(item.time)}</time><span class="ceremonial-dot"></span><div><strong>${esc(item.title)}</strong><p>${esc(item.details || 'Sem observações')}</p><small>Responsável: ${esc(item.responsible || 'A definir')}</small></div><input class="supply-check ceremonial-check" type="checkbox" data-ceremonial-check="${item.id}" ${item.status === 'Conclu\u00eddo' ? 'checked' : ''} aria-label="Marcar ${esc(item.title)} como concluida"><div class="row-actions"><button data-action="edit-ceremonial" data-id="${item.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-ceremonial" data-id="${item.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('') : empty('Adicione os horários do dia do casamento.')}</article>`;
+  <article class="card ceremonial-card">${ceremonial.length ? ceremonial.map(item => `<div class="ceremonial-row ${item.status === 'Concluído' ? 'is-complete' : ''}"><time>${esc(item.time)}</time><span class="ceremonial-dot"></span><div><strong>${esc(item.title)}${item.track === 'Noiva' || item.track === 'Noivo' ? ` <em class="track-tag track-${slugOf(item.track)}">${item.track}</em>` : ''}</strong><p>${esc(item.details || 'Sem observações')}</p><small>Responsável: ${esc(item.responsible || 'A definir')}</small></div><input class="supply-check ceremonial-check" type="checkbox" data-ceremonial-check="${item.id}" ${item.status === 'Conclu\u00eddo' ? 'checked' : ''} aria-label="Marcar ${esc(item.title)} como concluida"><div class="row-actions"><button data-action="edit-ceremonial" data-id="${item.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-ceremonial" data-id="${item.id}" aria-label="Excluir">${icon('trash')}</button></div></div>`).join('') : empty('Adicione os horários do dia do casamento.')}</article>`;
 }
 function renderChecklist() {
   const done = data.supplies.filter(s => s.status === 'No Local').length;
@@ -275,9 +635,10 @@ function renderTimeline() {
   };
   const sameMonth = weekStart.slice(0, 7) === days[6].slice(0, 7);
   const label = `${fmt(weekStart, sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'short' })} – ${fmt(days[6], { day: 'numeric', month: 'short', year: 'numeric' })}`;
-  return `${heading('PLANEJAMENTO', 'Cronograma.', 'Organize a semana, arraste as tarefas entre os dias e guarde em Prioridades o que ainda não tem data.', '<button class="button button-secondary" data-action="export-timeline"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-primary" data-action="add-task"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa</button>')}
+  return `${heading('PLANEJAMENTO', 'Cronograma.', 'Organize a semana, arraste as tarefas entre os dias e guarde em Prioridades o que ainda não tem data.', `<button class="button button-secondary" data-action="generate-checklist">${icon('check')}Checklist do casamento</button>` + '<button class="button button-secondary" data-action="export-timeline"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-primary" data-action="add-task"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa</button>')}
   <div class="summary-row"><span class="summary-chip">A fazer <strong>${open.length}</strong></span><span class="summary-chip">Concluídas <strong>${data.tasks.length - open.length}</strong></span><span class="summary-chip">Prioridades <strong>${priorities.length}</strong></span>${overdue.length ? `<span class="summary-chip is-late">Atrasadas <strong>${overdue.length}</strong></span>` : ''}</div>
-  <div class="planner-layout">
+  <div class="custom-tabs view-tabs" role="tablist"><button type="button" role="tab" data-view="semana" aria-selected="${timelineView === 'semana'}">Semana</button><button type="button" role="tab" data-view="quadro" aria-selected="${timelineView === 'quadro'}">Quadro</button><button type="button" role="tab" data-view="mes" aria-selected="${timelineView === 'mes'}">Mês a mês</button></div>
+  ${timelineView === 'quadro' ? renderBoard() : timelineView === 'mes' ? renderMonths() : `<div class="planner-layout">
     <section class="card week-card">
       <div class="week-bar">
         <div class="week-nav"><button type="button" class="icon-button" data-week="-1" aria-label="Semana anterior">‹</button><h2 class="week-label">${esc(label)}</h2><button type="button" class="icon-button" data-week="1" aria-label="Próxima semana">›</button></div>
@@ -293,7 +654,44 @@ function renderTimeline() {
       ${overdue.length ? `<h3 class="priority-sub is-late">Atrasadas · ${overdue.length}</h3><div class="priority-list">${overdue.map(t => card(t, true)).join('')}</div>` : ''}
       ${doneUndated.length ? `<details class="priority-done"><summary>Concluídas · ${doneUndated.length}</summary><div class="priority-list">${doneUndated.map(t => card(t, true)).join('')}</div></details>` : ''}
     </aside>
-  </div>`;
+  </div>`}`;
+}
+// Quadro estilo Trello: uma coluna por mês até o casamento; arrastar o cartão muda o prazo.
+function renderBoard() {
+  const today = todayIso(), current = today.slice(0, 7), wedding = data.wedding.date;
+  const dated = data.tasks.filter(t => t.date);
+  const last = [wedding?.slice(0, 7), ...dated.map(t => t.date.slice(0, 7))].filter(Boolean).sort().pop() || current;
+  const months = [];
+  for (let d = fromIso(`${current}-01`); isoDate(d).slice(0, 7) <= (last > current ? last : current); d.setMonth(d.getMonth() + 1)) months.push(isoDate(d).slice(0, 7));
+  const card = t => { const done = t.status === 'Concluído', late = !done && t.date && t.date < today; return `<article class="task-card board-card prio-${slugOf(t.priority || 'Média')} ${done ? 'is-done' : ''} ${t.status === 'Em Andamento' ? 'is-doing' : ''}" draggable="true" data-task-id="${t.id}"><input type="checkbox" class="task-check" data-task-toggle="${t.id}" ${done ? 'checked' : ''} aria-label="Concluir ${esc(t.title)}"><button type="button" class="task-card-body" data-action="edit-task" data-id="${t.id}"><span class="task-card-title">${esc(t.title)}</span><span class="board-meta">${t.date ? `<span class="${late ? 'is-late' : ''}">${esc(shortDate(t.date))}${t.time ? ` · ${esc(t.time)}` : ''}</span>` : '<span>Sem data</span>'}${badge(t.status)}</span>${t.responsible ? `<span class="task-card-who">${icon('users')}${esc(t.responsible)}</span>` : ''}</button></article>`; };
+  const column = (key, title, tag, list, drop) => `<section class="board-col ${key === 'late' ? 'is-late' : ''} ${key === current ? 'is-current' : ''} ${wedding && key === wedding.slice(0, 7) ? 'is-wedding' : ''}" ${drop !== null ? `data-drop-month="${drop}"` : ''}><header class="board-head"><div><h3>${esc(title)}</h3>${tag ? `<span>${tag}</span>` : ''}</div><b>${list.filter(t => t.status !== 'Concluído').length}</b></header><div class="board-list">${list.map(card).join('') || '<p class="priority-empty">Arraste tarefas para cá.</p>'}</div>${drop !== null ? `<button type="button" class="week-add" data-add-month="${drop}">${icon('plus')}<span>Tarefa</span></button>` : ''}</section>`;
+  const late = dated.filter(t => t.status !== 'Concluído' && t.date < today).sort(byTaskOrder);
+  const byMonth = m => dated.filter(t => t.date.slice(0, 7) === m && !(t.status !== 'Concluído' && t.date < today)).sort((a, b) => (a.status === 'Concluído') - (b.status === 'Concluído') || byTaskOrder(a, b));
+  const undated = data.tasks.filter(t => !t.date).sort((a, b) => (a.status === 'Concluído') - (b.status === 'Concluído') || priorityRank(a) - priorityRank(b));
+  const monthTag = m => { if (wedding && m === wedding.slice(0, 7)) return 'Mês do casamento ♡'; if (m === current) return 'Este mês'; if (!wedding) return ''; const diff = (Number(wedding.slice(0, 4)) - Number(m.slice(0, 4))) * 12 + Number(wedding.slice(5, 7)) - Number(m.slice(5)); return diff > 0 ? `${diff} ${diff === 1 ? 'mês' : 'meses'} antes` : ''; };
+  return `<p class="field-hint board-hint">Arraste os cartões entre os meses para mudar o prazo (no celular, toque no cartão e mude a data). A coluna Atrasadas mostra o que já passou da data.</p>
+  <div class="board">${late.length ? column('late', 'Atrasadas', 'Passou da data', late, null) : ''}${months.map(m => column(m, fromIso(`${m}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase()), monthTag(m), byMonth(m), m)).join('')}${column('nodate', 'Sem data', 'Prioridades', undated, '')}</div>`;
+}
+function renderMonths() {
+  const today = todayIso(), wedding = data.wedding.date, current = today.slice(0, 7);
+  const items = checklist(data).filter(i => !i.done && !i.added);
+  const dated = data.tasks.filter(t => t.date);
+  const last = [wedding?.slice(0, 7), ...dated.map(t => t.date.slice(0, 7))].filter(Boolean).sort().pop() || current;
+  const months = [];
+  for (let d = fromIso(`${current}-01`); isoDate(d).slice(0, 7) <= (last > current ? last : current); d.setMonth(d.getMonth() + 1)) months.push(isoDate(d).slice(0, 7));
+  const late = dated.filter(t => t.status !== 'Concluído' && t.date.slice(0, 7) < current).sort(byTaskOrder);
+  const taskRow = t => `<li class="${t.status === 'Concluído' ? 'is-done' : ''}"><input type="checkbox" class="task-check" data-task-toggle="${t.id}" ${t.status === 'Concluído' ? 'checked' : ''} aria-label="Concluir ${esc(t.title)}"><button type="button" class="month-task" data-action="edit-task" data-id="${t.id}">${esc(t.title)}</button><span class="month-date">${esc(shortDate(t.date))}</span></li>`;
+  const suggestionRow = i => `<li class="is-suggestion"><span class="sugg-mark" aria-hidden="true">✦</span><span class="month-task">${esc(i.title)}${i.late ? ' <b>· atrasada</b>' : ''}</span><button type="button" class="text-button" data-add-suggestion="${i.key}">Adicionar</button></li>`;
+  const monthCard = m => {
+    const tasks = dated.filter(t => t.date.slice(0, 7) === m).sort(byTaskOrder), done = tasks.filter(t => t.status === 'Concluído').length;
+    const sugg = items.filter(i => (i.due.slice(0, 7) < current ? current : i.due.slice(0, 7)) === m);
+    const diff = (Number(m.slice(0, 4)) - Number(wedding?.slice(0, 4) || 0)) * 12 + Number(m.slice(5)) - Number(wedding?.slice(5, 7) || 0);
+    const tag = wedding && m === wedding.slice(0, 7) ? 'Mês do casamento ♡' : m === current ? 'Este mês' : wedding && diff < 0 ? `${-diff} ${diff === -1 ? 'mês' : 'meses'} antes` : '';
+    return `<section class="card month-card ${m === current ? 'is-current' : ''} ${wedding && m === wedding.slice(0, 7) ? 'is-wedding' : ''}"><header class="month-head"><div><h3>${esc(fromIso(`${m}-01`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase()))}</h3>${tag ? `<span>${tag}</span>` : ''}</div><small>${done}/${tasks.length}</small></header>${tasks.length ? `<div class="mini-track"><span style="width:${Math.round(done / tasks.length * 100)}%"></span></div>` : ''}<ul class="month-list">${tasks.map(taskRow).join('')}${sugg.map(suggestionRow).join('')}</ul>${!tasks.length && !sugg.length ? '<p class="priority-empty">Nada marcado neste mês.</p>' : ''}</section>`;
+  };
+  return `${items.length ? `<section class="notice-card"><div><strong>A cerimonialista virtual sugeriu ${items.length} ${items.length === 1 ? 'etapa' : 'etapas'}</strong><p>Pelo seu ${esc((data.wedding.style || 'casamento').toLowerCase())} e pela data${wedding ? ` (${esc(dateLabel(wedding))})` : ''}, organizadas mês a mês. As marcadas com ✦ ainda não estão no cronograma.</p></div><button type="button" class="button button-primary" data-action="generate-checklist">Adicionar todas</button></section>` : ''}
+  ${late.length ? `<section class="card month-card is-late"><header class="month-head"><div><h3>Atrasadas</h3><span>De meses anteriores</span></div><small>${late.length}</small></header><ul class="month-list">${late.map(taskRow).join('')}</ul></section>` : ''}
+  <div class="month-grid">${months.map(monthCard).join('')}</div>`;
 }
 function renderNotes() {
   const notes = [...data.notes].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
@@ -357,14 +755,26 @@ function raiseInteractiveCursor() {
   }
 }
 function recordForm(kind, record = {}) {
-  if (kind === 'guest') return [field('name', 'Nome', record.name || '', 'text', null, true, { required: true }), field('phone', 'Telefone / WhatsApp', record.phone || '', 'tel', null, false, { placeholder: '(11) 99999-0000' }), field('group', 'Grupo', record.group || guestGroups[0], 'text', guestGroups), field('status', 'Status do convite', record.status || 'Pendente', 'text', ['Pendente', 'Enviado', 'Confirmado', 'Recusado']), field('companions', 'Acompanhantes adultos', record.companions ?? 0, 'number', null, false, { min: 0 }), field('children', 'Crianças', record.children ?? 0, 'number', null, false, { min: 0 })].join('');
+  if (kind === 'guest') return [field('name', 'Nome', record.name || '', 'text', null, true, { required: true }), field('phone', 'Telefone / WhatsApp', record.phone || '', 'tel', null, false, { placeholder: '(11) 99999-0000' }), field('group', 'Grupo', record.group || guestGroups[0], 'text', guestGroups), field('family', 'Família / núcleo', record.family || '', 'text', null, false, { placeholder: 'Ex.: Oliveira' }), field('status', 'Status do convite', record.status || 'Pendente', 'text', guestStatuses), field('companions', 'Acompanhantes adultos', record.companions ?? 0, 'number', null, false, { min: 0 }), field('children', 'Crianças', record.children ?? 0, 'number', null, false, { min: 0 }), `<div class="field"><label for="field-dietary">Restrição alimentar</label><input id="field-dietary" name="dietary" list="diet-list" value="${esc(record.dietary || '')}" placeholder="Nenhuma" autocomplete="off"><datalist id="diet-list">${dietaryOptions.map(o => `<option value="${esc(o)}">`).join('')}</datalist></div>`, `<div class="field"><label for="field-tableId">Mesa</label><select id="field-tableId" name="tableId"><option value="">Sem mesa</option>${data.tables.map(t => `<option value="${t.id}" ${record.tableId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>`, field('notes', 'Observações', record.notes || '', 'text', null, true)].join('');
   if (kind === 'expense') return [field('description', 'Descrição', record.description || '', 'text', null, true, { required: true }), field('category', 'Categoria', record.category || expenseCategories[0], 'text', allExpenseCategories()), field('supplier', 'Fornecedor', record.supplier || '', 'text', null, false, { placeholder: 'Ex.: Buffet Sabor & Arte' }), field('planned', 'Valor previsto (R$)', record.planned ?? '', 'number', null, false, { min: 0, step: '.01' }), field('paid', 'Valor pago (R$)', record.paid ?? 0, 'number', null, false, { min: 0, step: '.01' }), field('status', 'Forma / status', record.status || 'Pendente', 'text', expenseStatuses), field('notes', 'Observações', record.notes || '', 'text', null, true), '<p class="field-hint" style="grid-column:1/-1;margin:0">"Presente Ganho" conta no total do orçamento, mas não no que falta pagar.</p>'].join('');
+  if (kind === 'document') return [field('title', 'Documento', record.title || '', 'text', null, true, { required: true, placeholder: 'Ex.: Contrato do buffet, certidões, nota fiscal do vestido' }), field('category', 'Categoria', record.category || docCategories[0], 'text', docCategories), field('date', 'Data', record.date || todayIso(), 'date'), field('notes', 'Observações', record.notes || '', 'textarea', null, true)].join('');
+  if (kind === 'inspiration') { const colors = record.colors?.length ? record.colors : paletteDefaults; return [field('title', 'Nome do mural', record.title || '', 'text', null, true, { required: true, placeholder: 'Ex.: Mesa do bolo, buquê, convite' }), field('notes', 'O que a gente gostou', record.notes || '', 'textarea', null, true, { placeholder: 'Ex.: flores brancas e folhagem, nada de dourado' }), `<div class="field full"><label>Paleta de cores</label><div class="palette-inputs">${[0, 1, 2, 3].map(i => `<input type="color" name="c${i}" value="${esc(colors[i] || paletteDefaults[i])}" aria-label="Cor ${i + 1}">`).join('')}<label class="tpl-toggle"><input type="checkbox" name="showColors" ${record.colors?.length ? 'checked' : ''}> Mostrar a paleta no mural</label></div></div>`].join(''); }
+  if (kind === 'table') return [field('name', 'Nome da mesa', record.name || `Mesa ${data.tables.length + 1}`, 'text', null, false, { required: true }), field('seats', 'Lugares', record.seats ?? 8, 'number', null, false, { min: 0 })].join('');
+  if (kind === 'contact') return [field('name', 'Nome', record.name || '', 'text', null, false, { required: true }), field('role', 'Função', record.role || '', 'text', null, false, { placeholder: 'Ex.: Cerimonialista, motorista, padrinho' }), field('phone', 'Telefone / WhatsApp', record.phone || '', 'tel', null, true, { required: true })].join('');
+  if (kind === 'place') return [field('name', 'Lugar', record.name || '', 'text', null, false, { required: true, placeholder: 'Ex.: Making of, igreja, hotel' }), field('time', 'Horário', record.time || '', 'time'), field('address', 'Endereço', record.address || '', 'text', null, true, { required: true }), field('notes', 'Ponto de referência / observações', record.notes || '', 'text', null, true)].join('');
+  if (kind === 'planb') return [field('problem', 'Se acontecer...', record.problem || '', 'text', null, true, { required: true }), field('solution', 'O que fazer', record.solution || '', 'textarea', null, true, { required: true }), field('owner', 'Quem resolve', record.owner || '', 'text', null, true)].join('');
+  if (kind === 'kit') return field('item', 'Item do kit', record.item || '', 'text', null, true, { required: true });
+  if (kind === 'honeymoon') { const h = data.honeymoon; return [field('destination', 'Destino escolhido', h.destination || '', 'text', null, true, { placeholder: 'Ex.: Maragogi, Alagoas' }), field('start', 'Ida', h.start || '', 'date'), field('end', 'Volta', h.end || '', 'date'), field('budget', 'Orçamento da viagem (R$)', h.budget || '', 'number', null, false, { min: 0, step: '.01' }), field('saved', 'Já economizado (R$)', h.saved || '', 'number', null, false, { min: 0, step: '.01' }), field('notes', 'Anotações', h.notes || '', 'textarea', null, true)].join(''); }
+  if (kind === 'hmDestination') return [field('name', 'Destino', record.name || '', 'text', null, false, { required: true }), field('estimate', 'Custo estimado (R$)', record.estimate ?? '', 'number', null, false, { min: 0, step: '.01' }), field('season', 'Melhor época', record.season || '', 'text'), field('link', 'Link de inspiração', record.link || '', 'text'), field('notes', 'Por que queremos ir', record.notes || '', 'textarea', null, true)].join('');
+  if (kind === 'hmBooking') return [field('title', 'Reserva / opção', record.title || '', 'text', null, true, { required: true, placeholder: 'Ex.: Pousada Mar Azul, voo Recife–Maceió' }), field('type', 'Tipo', record.type || bookingTypes[0], 'text', bookingTypes), field('status', 'Status', record.status || 'Opção', 'text', bookingStatuses), field('checkin', 'Data / check-in', record.checkin || '', 'date'), field('checkout', 'Check-out / volta', record.checkout || '', 'date'), field('price', 'Valor (R$)', record.price ?? '', 'number', null, false, { min: 0, step: '.01' }), field('paid', 'Já pago (R$)', record.paid ?? 0, 'number', null, false, { min: 0, step: '.01' }), field('code', 'Código da reserva', record.code || '', 'text'), field('link', 'Link da reserva / comprovante', record.link || '', 'text'), field('notes', 'Observações', record.notes || '', 'text', null, true)].join('');
+  if (kind === 'hmItinerary') return [field('date', 'Dia', record.date || data.honeymoon.start || '', 'date', null, false, { required: true }), field('time', 'Horário', record.time || '', 'time'), field('activity', 'Passeio / restaurante', record.activity || '', 'text', null, true, { required: true }), field('place', 'Local / endereço', record.place || '', 'text', null, true), field('notes', 'Observações', record.notes || '', 'text', null, true)].join('');
+  if (kind === 'vendor') return [field('name', 'Fornecedor', record.name || '', 'text', null, true, { required: true, placeholder: 'Ex.: Estúdio Luz & Afeto' }), field('category', 'Categoria', record.category || expenseCategories[0], 'text', allExpenseCategories()), field('status', 'Status', record.status || 'Orçamento recebido', 'text', VENDOR_STATUSES), field('contact', 'Contato', record.contact || '', 'text', null, false, { placeholder: 'Nome de quem atende' }), field('phone', 'WhatsApp', record.phone || '', 'tel', null, false, { placeholder: '(11) 99999-0000' }), field('email', 'E-mail', record.email || '', 'email'), field('link', 'Site ou Instagram', record.link || '', 'text', null, true, { placeholder: 'instagram.com/...' }), field('price', 'Preço inicial (R$)', record.price ?? '', 'number', null, false, { min: 0, step: '.01' }), field('discount', 'Desconto (R$)', record.discount ?? 0, 'number', null, false, { min: 0, step: '.01' }), field('fees', 'Taxas extras (R$)', record.fees ?? 0, 'number', null, false, { min: 0, step: '.01' }), '<p class="field-hint" style="align-self:end;margin:0 0 10px">Valor final = preço − desconto + taxas.</p>', field('includes', 'O que está incluído (um item por linha)', record.includes || '', 'textarea', null, true, { placeholder: 'Ex.: 8 horas de cobertura\n400 fotos editadas\nÁlbum 30x30' }), field('conditions', 'Condições e forma de pagamento', record.conditions || '', 'textarea', null, true, { placeholder: 'Ex.: 30% de entrada e o resto em 5x no boleto. Entrega em 60 dias.' }), field('agreed', 'O que ficou combinado', record.agreed || '', 'textarea', null, true, { placeholder: 'Ex.: chega às 14h, inclui 2 assistentes, entrega das fotos em 60 dias' }), field('overtime', 'Hora extra (R$ por hora)', record.overtime ?? '', 'number', null, false, { min: 0, step: '.01' }), field('contractStatus', 'Contrato', record.contractStatus || 'Sem contrato', 'text', contractStatuses), '<p class="field-hint" style="align-self:end;margin:0 0 10px">Anexe o contrato e as propostas pelo botão de clipe do fornecedor.</p>', field('notes', 'Observações e pontos de negociação', record.notes || '', 'textarea', null, true)].join('');
   if (kind === 'ceremony') return [field('step', 'Etapa', record.step || ceremonySteps[0], 'text', ceremonySteps, true), field('participants', 'Participantes', record.participants || '', 'text', null, true), field('music', 'Música', record.music || '', 'text'), field('artist', 'Artista', record.artist || '', 'text'), field('notes', 'Instruções / observações', record.notes || '', 'textarea', null, true)].join('');
   if (kind === 'supply') return [field('name', 'Item', record.name || '', 'text', null, true, { required: true }), field('category', 'Categoria', record.category || checklistCategories[0], 'text', checklistCategories), field('quantity', 'Quantidade / observação', record.quantity || '', 'text'), field('status', 'Status', record.status || 'Pendente', 'text', checklistStatuses)].join('');
   if (kind === 'task') return [field('title', 'Tarefa', record.title || '', 'text', null, true, { required: true }), field('date', 'Data', record.date || '', 'date'), field('time', 'Horário', record.time || '', 'time'), field('priority', 'Prioridade', record.priority || 'Média', 'text', taskPriorities), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), responsibleFields(record), field('description', 'Detalhes', record.description || '', 'textarea', null, true), '<p class="field-hint" style="grid-column:1/-1;margin:0">Sem data, a tarefa fica em Prioridades. Com responsável e WhatsApp, você avisa a pessoa em um toque.</p>'].join('');
   if (kind === 'note') return [field('title', 'T\u00edtulo', record.title || '', 'text', null, true, { required: true }), `<div class="field full"><label for="note-editor">Anota\u00e7\u00e3o</label><div class="note-toolbar" role="toolbar" aria-label="Formata\u00e7\u00e3o da anota\u00e7\u00e3o"><button type="button" data-note-command="bold" aria-label="Negrito" title="Negrito"><strong>B</strong></button><button type="button" data-note-command="italic" aria-label="It\u00e1lico" title="It\u00e1lico"><em>I</em></button><button type="button" data-note-command="underline" aria-label="Sublinhado" title="Sublinhado"><u>U</u></button><button type="button" data-note-command="strikeThrough" aria-label="Riscado" title="Riscado"><s>S</s></button><span></span><button type="button" data-note-command="createLink" aria-label="Inserir link" title="Inserir link">Link</button><button type="button" data-note-command="insertUnorderedList" aria-label="Lista" title="Lista">Lista</button></div><div id="note-editor" class="note-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Escreva sua ideia, cole um link ou formate o texto...">${sanitizeNoteHtml(record.content || '')}</div><small class="editor-hint">Selecione um trecho para formatar. Links escritos como https://... ficam clic\u00e1veis ao salvar.</small></div>`].join('');
-  if (kind === 'ceremonial') return [field('time', 'Horário', record.time || '', 'time', null, false, { required: true }), field('title', 'Atividade', record.title || '', 'text', null, true, { required: true }), field('responsible', 'Responsável', record.responsible || '', 'text', null, false, { required: true }), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('details', 'Orientações para a equipe', record.details || '', 'textarea', null, true)].join('');
-  if (kind === 'wedding') return [field('couple', 'Nomes do casal', data.wedding.couple, 'text', null, true, { required: true }), field('date', 'Data do casamento', data.wedding.date, 'date', null, false, { required: true }), field('time', 'Horário do casamento', data.wedding.time || '11:30', 'time', null, false, { required: true }), field('venue', 'Local', data.wedding.venue, 'text', null, true)].join('');
+  if (kind === 'ceremonial') return [field('time', 'Horário', record.time || '', 'time', null, false, { required: true }), field('title', 'Atividade', record.title || '', 'text', null, true, { required: true }), field('responsible', 'Responsável', record.responsible || '', 'text', null, false, { required: true }), field('track', 'Cronograma de quem', record.track || 'Geral', 'text', tracks), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('details', 'Orientações para a equipe', record.details || '', 'textarea', null, true)].join('');
+  if (kind === 'wedding') return [field('couple', 'Nomes do casal', data.wedding.couple, 'text', null, true, { required: true }), field('date', 'Data do casamento', data.wedding.date, 'date', null, false, { required: true }), field('time', 'Horário do casamento', data.wedding.time || '11:30', 'time', null, false, { required: true }), field('venue', 'Local', data.wedding.venue, 'text', null, true), field('guestsExpected', 'Convidados previstos', data.wedding.guestsExpected || '', 'number', null, false, { min: 0, placeholder: 'Ex.: 100' }), field('budget', 'Orçamento máximo (R$)', data.wedding.budget || '', 'number', null, false, { min: 0, step: '.01', placeholder: 'Ex.: 30000' }), field('style', 'Estilo', data.wedding.style || WEDDING_STYLES[0], 'text', WEDDING_STYLES), field('ceremonyType', 'Cerimônia', data.wedding.ceremonyType || CEREMONY_TYPES[0], 'text', CEREMONY_TYPES), '<p class="field-hint" style="grid-column:1/-1;margin:0">Com o orçamento e o número de convidados, a cerimonialista virtual sugere quanto gastar em cada categoria e monta o checklist pelo estilo e tipo de cerimônia.</p>'].join('');
 }
 // Responsável com sugestões dos convidados (o WhatsApp é preenchido sozinho quando a pessoa tem telefone).
 const knownPeople = () => new Map([...data.guests.map(g => [g.name, g.phone || '']), ...data.tasks.filter(t => t.responsible).map(t => [t.responsible, t.responsiblePhone || ''])]);
@@ -383,21 +793,23 @@ function notifyResponsible(task) {
   $('#modal-submit').textContent = 'Abrir WhatsApp';
 }
 function addOrEdit(kind, id = null, preset = {}) {
-  const config = { guest: ['guests', 'convidado', 'name', 'id'], expense: ['expenses', 'gasto', 'description', 'id'], ceremony: ['ceremony', 'etapa', 'step', 'id'], ceremonial: ['ceremonial', 'horário da cerimonial', 'title', 'id'], supply: ['supplies', 'item', 'name', 'id'], task: ['tasks', 'tarefa', 'title', 'id'], note: ['notes', 'anotação', 'title', 'id'] }[kind];
+  const config = { document: ['documents', 'documento', 'title', 'id'], inspiration: ['inspirations', 'mural', 'title', 'id'], table: ['tables', 'mesa', 'name', 'id'], contact: ['emergencyContacts', 'contato', 'name', 'id'], place: ['places', 'endereço', 'name', 'id'], planb: ['planB', 'plano B', 'problem', 'id'], kit: ['kit', 'item do kit', 'item', 'id'], hmDestination: ['hmDestinations', 'destino', 'name', 'id'], hmBooking: ['hmBookings', 'reserva', 'title', 'id'], hmItinerary: ['hmItinerary', 'passeio', 'activity', 'id'], vendor: ['vendors', 'fornecedor', 'name', 'id'], guest: ['guests', 'convidado', 'name', 'id'], expense: ['expenses', 'gasto', 'description', 'id'], ceremony: ['ceremony', 'etapa', 'step', 'id'], ceremonial: ['ceremonial', 'horário da cerimonial', 'title', 'id'], supply: ['supplies', 'item', 'name', 'id'], task: ['tasks', 'tarefa', 'title', 'id'], note: ['notes', 'anotação', 'title', 'id'] }[kind];
   const [collection, label, , idKey] = config; const existing = id ? data[collection].find(x => x[idKey] === id) : null;
   const before = existing ? `${existing.responsible}|${existing.responsiblePhone}|${existing.date}|${existing.time}|${existing.title}` : '';
   openModal(`${existing ? 'Editar' : 'Adicionar'} ${label}`, recordForm(kind, existing || preset), values => {
-    for (const k of ['companions', 'children', 'planned', 'paid']) if (values[k] !== undefined) values[k] = Number(values[k] || 0);
+    for (const k of ['companions', 'children', 'planned', 'paid', 'price', 'discount', 'fees', 'seats', 'estimate', 'overtime']) if (values[k] !== undefined) values[k] = Number(values[k] || 0);
+    if (kind === 'inspiration') { values.colors = values.showColors ? [0, 1, 2, 3].map(i => values[`c${i}`]).filter(Boolean) : []; [0, 1, 2, 3].forEach(i => delete values[`c${i}`]); delete values.showColors; }
     if (existing) Object.assign(existing, values, kind === 'note' ? { updatedAt: new Date().toISOString() } : {}); else data[collection].push({ id: uid(kind[0]), ...values, ...(kind === 'note' ? { updatedAt: new Date().toISOString() } : {}) });
     save(kind === 'note' ? 'Anotação salva.' : existing ? 'Alterações salvas.' : 'Item adicionado.');
     const task = kind === 'task' ? (existing || data.tasks[data.tasks.length - 1]) : null;
+    if (!existing && (kind === 'document' || kind === 'inspiration')) { const record = data[collection][data[collection].length - 1]; setTimeout(() => openAttachments(record.id, collection), 80); }
     if (task?.responsible && task.responsiblePhone && `${task.responsible}|${task.responsiblePhone}|${task.date}|${task.time}|${task.title}` !== before) setTimeout(() => notifyResponsible(task), 80);
   });
   if (kind === 'task') $('#field-responsible')?.addEventListener('change', event => { const phone = knownPeople().get(event.target.value.trim()); const input = $('#field-responsiblePhone'); if (phone && input && !input.value) input.value = phone; });
 }
 function deleteRecord(collection, id, label) {
   openModal(`Excluir ${label}?`, '<p class="confirm-copy">Esta ação não pode ser desfeita. O item será removido do planejamento.</p>', () => {
-    if (collection === 'expenses' || collection === 'tasks') (data[collection].find(r => r.id === id)?.files || []).forEach(deleteAttachmentParts);
+    if (['expenses', 'tasks', 'vendors', 'hmBookings', 'documents', 'inspirations'].includes(collection)) (data[collection].find(r => r.id === id)?.files || []).forEach(deleteAttachmentParts);
     data[collection] = data[collection].filter(r => r.id !== id);
     save('Item removido.');
   });
@@ -418,7 +830,7 @@ function addCategory() {
 /* Anexos dos gastos: arquivos em planners/{uid}/anexos (em partes, por causa do limite de 1 MB por documento)
    e links no próprio gasto. */
 const ATTACH_PART = 700000, ATTACH_MAX = 8 * 1024 * 1024;
-const attachRef = (fileId, part) => doc(db, 'planners', activeUser.uid, 'anexos', `${fileId}_${part}`);
+const attachRef = (fileId, part) => doc(db, 'planners', plannerId || activeUser.uid, 'anexos', `${fileId}_${part}`);
 const fileSize = bytes => (bytes > 1048576 ? `${(bytes / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 const readAsDataUrl = file => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
 async function shrinkImage(file) {
@@ -459,7 +871,7 @@ function openAttachments(recordId, collection = 'expenses') {
     const expense = current();
     if (!expense) return dialog.close();
     const files = expense.files || [], links = expense.links || [];
-    $('#attach-body').innerHTML = `<div class="modal-head"><div><p class="eyebrow">ANEXOS</p><h2>${esc(expense.description || expense.title)}</h2></div><button type="button" class="icon-button" data-attach-close aria-label="Fechar">×</button></div>
+    $('#attach-body').innerHTML = `<div class="modal-head"><div><p class="eyebrow">ANEXOS</p><h2>${esc(expense.description || expense.title || expense.name || expense.activity)}</h2></div><button type="button" class="icon-button" data-attach-close aria-label="Fechar">×</button></div>
       <section class="attach-section"><h3>Arquivos <small>Fotos, PDFs e contratos · até 8 MB cada</small></h3>
         <div class="attach-list">${files.length ? files.map(f => `<div class="attach-item" data-file="${f.id}"><span class="attach-thumb">${f.type.startsWith('image/') ? '<img alt="">' : `<b>${esc((f.name.split('.').pop() || 'arq').slice(0, 4).toUpperCase())}</b>`}</span><span class="attach-name"><strong>${esc(f.name)}</strong><small>${fileSize(f.size)}</small></span><button type="button" class="button button-secondary button-sm" data-open-file="${f.id}">Abrir</button><button type="button" class="icon-button" data-delete-file="${f.id}" aria-label="Excluir ${esc(f.name)}">${icon('trash')}</button></div>`).join('') : '<p class="attach-empty">Nenhum arquivo ainda.</p>'}</div>
         <label class="button button-secondary attach-upload ${busy ? 'is-busy' : ''}">${icon('upload')}${busy || 'Enviar arquivos'}<input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" hidden ${busy ? 'disabled' : ''}></label>
@@ -646,7 +1058,7 @@ function exportTimelinePdf() {
 function bindPageEvents() {
   $('#page-content').querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => {
     const { action, id } = button.dataset;
-    if (action === 'edit-wedding') openModal('Detalhes do casamento', recordForm('wedding'), values => { data.wedding = values; save('Detalhes do casamento atualizados.'); render(); });
+    if (action === 'edit-wedding') openModal('Detalhes do casamento', recordForm('wedding'), values => { data.wedding = { ...data.wedding, ...values, guestsExpected: Number(values.guestsExpected || 0), budget: Number(values.budget || 0) }; save('Detalhes do casamento atualizados.'); render(); });
     if (action === 'add-guest' || action === 'edit-guest') addOrEdit('guest', id);
     if (action === 'add-expense' || action === 'edit-expense') addOrEdit('expense', id);
     if (action === 'add-ceremony' || action === 'edit-ceremony') addOrEdit('ceremony', id);
@@ -658,6 +1070,37 @@ function bindPageEvents() {
     if (action === 'delete-expense') deleteRecord('expenses', id, 'este gasto');
     if (action === 'attach-expense') openAttachments(id);
     if (action === 'attach-task') openAttachments(id, 'tasks');
+    if (action === 'attach-vendor') openAttachments(id, 'vendors');
+    if (action === 'add-vendor') addOrEdit('vendor', null, id ? { category: id } : {});
+    if (action === 'edit-vendor') addOrEdit('vendor', id);
+    if (action === 'delete-vendor') deleteRecord('vendors', id, 'este fornecedor');
+    if (action === 'contract-vendor') contractVendor(id);
+    if (action === 'installments-expense') openInstallments(id);
+    if (action === 'import-rsvps') importRsvps();
+    if (action === 'export-guests') exportGuestsPdf();
+    if (action === 'export-guests-csv') exportGuestsCsv();
+    if (action === 'add-table' || action === 'edit-table') addOrEdit('table', id);
+    if (action === 'delete-table') { openModal('Excluir mesa?', '<p class="confirm-copy">Os convidados desta mesa voltam para "Sem mesa".</p>', () => { data.tables = data.tables.filter(t => t.id !== id); data.guests.forEach(g => { if (g.tableId === id) g.tableId = ''; }); save('Mesa excluída.'); }); $('#modal-submit').textContent = 'Excluir mesa'; }
+    for (const kind of ['contact', 'place', 'planb', 'hmDestination', 'hmBooking', 'hmItinerary']) {
+      const coll = { contact: 'emergencyContacts', place: 'places', planb: 'planB', hmDestination: 'hmDestinations', hmBooking: 'hmBookings', hmItinerary: 'hmItinerary' }[kind];
+      if (action === `add-${kind}` || action === `edit-${kind}`) addOrEdit(kind, id);
+      if (action === `delete-${kind}`) deleteRecord(coll, id, 'este item');
+    }
+    if (action === 'delete-kit') { data.kit = data.kit.filter(k => k.id !== id); save('Item removido.', false); render(); }
+    if (action === 'delete-pack') { data.hmPacking = data.hmPacking.filter(k => k.id !== id); save('Item removido.', false); render(); }
+    if (action === 'person-scripts') openScripts();
+    if (action === 'add-document' || action === 'edit-document') addOrEdit('document', id);
+    if (action === 'delete-document') deleteRecord('documents', id, 'este documento');
+    if (action === 'attach-document') openAttachments(id, 'documents');
+    if (action === 'add-inspiration' || action === 'edit-inspiration') addOrEdit('inspiration', id);
+    if (action === 'delete-inspiration') deleteRecord('inspirations', id, 'este mural');
+    if (action === 'attach-inspiration') openAttachments(id, 'inspirations');
+    if (action === 'delete-doccheck') { data.docChecklist = data.docChecklist.filter(k => k.id !== id); save('Item removido.', false); render(); }
+    if (action === 'export-dayd') exportDayDPdf();
+    if (action === 'edit-honeymoon') openModal('Detalhes da viagem', recordForm('honeymoon'), values => { data.honeymoon = { ...data.honeymoon, ...values, budget: Number(values.budget || 0), saved: Number(values.saved || 0) }; save('Viagem atualizada.'); });
+    if (action === 'attach-booking') openAttachments(id, 'hmBookings');
+    if (action === 'edit-board') openAttachments('sonhos', 'hmBoard');
+    if (action === 'generate-checklist') { if (!data.wedding.date) { notify('Defina a data do casamento primeiro.'); return; } const n = addChecklistItems(); timelineView = 'mes'; if (currentPage !== 'cronograma') setPage('cronograma'); else render(); save(n ? `${n} etapas adicionadas ao cronograma.` : 'O checklist já está no cronograma.', false); }
     if (action === 'notify-task') notifyResponsible(data.tasks.find(t => t.id === id));
     if (action === 'add-category') addCategory();
     if (action === 'delete-category') { data.customCategories = (data.customCategories || []).filter(c => c !== id); if (expenseFilter === id) expenseFilter = 'Todas'; save('Categoria removida.'); render(); }
@@ -689,9 +1132,76 @@ function bindPageEvents() {
   $('#guest-search')?.addEventListener('input', e => { const pos = e.target.selectionStart; guestSearch = e.target.value; render(); const input = $('#guest-search'); input.focus(); input.setSelectionRange(pos, pos); });
   $('#expense-filter')?.addEventListener('change', e => { expenseFilter = e.target.value; render(); });
   bindWeekEvents();
+  page_bindSmart();
+}
+function page_bindSmart() {
+  const page = $('#page-content');
+  if (currentPage === 'convidados') loadSiteRsvps();
+  page.querySelectorAll('[data-guest-view]').forEach(b => b.addEventListener('click', () => { guestView = b.dataset.guestView; render(); }));
+  $('#guest-status-filter')?.addEventListener('change', e => { guestStatusFilter = e.target.value; render(); });
+  page.querySelectorAll('.guest-chip[draggable]').forEach(chip => chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', chip.dataset.guestId); chip.classList.add('is-dragging'); }));
+  page.querySelectorAll('[data-table-drop]').forEach(zone => {
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('is-drop'); });
+    zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('is-drop'); });
+    zone.addEventListener('drop', e => { e.preventDefault(); const guest = data.guests.find(g => g.id === e.dataTransfer.getData('text/plain')); if (!guest) return; guest.tableId = zone.dataset.tableDrop; save(guest.tableId ? `${guest.name} na ${data.tables.find(t => t.id === guest.tableId)?.name}.` : `${guest.name} sem mesa.`, false); render(); });
+  });
+  page.querySelectorAll('[data-vendor-arrival]').forEach(input => input.addEventListener('change', () => { const v = data.vendors.find(x => x.id === input.dataset.vendorArrival); if (v) { v.arrival = input.value; save('Horário de chegada salvo.', false); render(); } }));
+  page.querySelectorAll('[data-kit-check]').forEach(input => input.addEventListener('change', () => { const k = data.kit.find(x => x.id === input.dataset.kitCheck); if (k) { k.done = input.checked; save('', false); render(); } }));
+  page.querySelectorAll('[data-pack-check]').forEach(input => input.addEventListener('change', () => { const k = data.hmPacking.find(x => x.id === input.dataset.packCheck); if (k) { k.done = input.checked; save('', false); render(); } }));
+  $('#kit-add')?.addEventListener('submit', e => { e.preventDefault(); const item = e.target.item.value.trim(); if (!item) return; data.kit.push({ id: uid('k'), item, done: false }); save('Item adicionado ao kit.', false); render(); $('#kit-add input')?.focus(); });
+  $('#pack-add')?.addEventListener('submit', e => { e.preventDefault(); const item = e.target.item.value.trim(); if (!item) return; data.hmPacking.push({ id: uid('m'), item, category: e.target.category.value, done: false }); save('Item adicionado.', false); render(); $('#pack-add input')?.focus(); });
+  page.querySelectorAll('[data-booking-status]').forEach(select => select.addEventListener('change', () => { const b = data.hmBookings.find(x => x.id === select.dataset.bookingStatus); if (b) { b.status = select.value; save('Reserva atualizada.', false); render(); } }));
+  page.querySelectorAll('[data-choose-destination]').forEach(button => button.addEventListener('click', () => { const d = data.hmDestinations.find(x => x.id === button.dataset.chooseDestination); if (d) { data.honeymoon.destination = d.name; if (!data.honeymoon.budget && d.estimate) data.honeymoon.budget = d.estimate; save(`${d.name} escolhido ♡`, false); render(); } }));
+  page.querySelectorAll('[data-thumb]').forEach(img => { const [coll, recId, fileId] = img.dataset.thumb.split('|'); const file = (data[coll] || []).find(r => r.id === recId)?.files?.find(f => f.id === fileId); if (file) readAttachment(file).then(url => { img.src = url; }).catch(() => {}); });
+  page.querySelectorAll('[data-doccheck]').forEach(input => input.addEventListener('change', () => { const k = data.docChecklist.find(x => x.id === input.dataset.doccheck); if (k) { k.done = input.checked; save('', false); render(); } }));
+  $('#doccheck-add')?.addEventListener('submit', e => { e.preventDefault(); const item = e.target.item.value.trim(); if (!item) return; data.docChecklist.push({ id: uid('d'), item, done: false }); save('Documento adicionado.', false); render(); $('#doccheck-add input')?.focus(); });
+  page.querySelectorAll('[data-doc-filter]').forEach(b => b.addEventListener('click', () => { docFilter = b.dataset.docFilter; render(); }));
+  $('#doc-search')?.addEventListener('input', e => { const pos = e.target.selectionStart; docSearch = e.target.value; render(); const input = $('#doc-search'); input.focus(); input.setSelectionRange(pos, pos); });
+  if (currentPage === 'documentos') {
+    const list = allDocuments().filter(d => (docFilter === 'Todos' || d.origin === docFilter) && `${d.name} ${d.label}`.toLowerCase().includes(docSearch.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+    page.querySelectorAll('[data-open-doc]').forEach(b => b.addEventListener('click', () => openFile(list[Number(b.dataset.openDoc)].file)));
+    page.querySelectorAll('[data-doc-source]').forEach(b => b.addEventListener('click', () => { const d = list[Number(b.dataset.docSource)]; openAttachments(d.record.id, d.coll); }));
+  }
+  const board = data.hmBoard[0];
+  page.querySelectorAll('[data-dream-file]').forEach(span => { const f = board?.files?.find(x => x.id === span.dataset.dreamFile); if (f) readAttachment(f).then(url => { span.querySelector('img').src = url; }).catch(() => {}); });
+  page.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { timelineView = b.dataset.view; render(); }));
+  page.querySelectorAll('[data-add-suggestion]').forEach(b => b.addEventListener('click', () => { addChecklistItems([b.dataset.addSuggestion]); save('Etapa adicionada ao cronograma.', false); render(); }));
+  page.querySelectorAll('[data-vendor-status]').forEach(select => select.addEventListener('change', () => {
+    const v = data.vendors.find(x => x.id === select.dataset.vendorStatus);
+    if (!v) return;
+    if (select.value === 'Contratado' && v.status !== 'Contratado') { render(); contractVendor(v.id); return; }
+    if (v.status === 'Contratado' && select.value !== 'Contratado' && v.expenseId) notify('O gasto deste fornecedor continua no financeiro.');
+    v.status = select.value; save('Status atualizado.', false); render();
+  }));
+  page.querySelectorAll('[data-vendor-tab]').forEach(b => b.addEventListener('click', () => { vendorTab = b.dataset.vendorTab; render(); }));
+  page.querySelectorAll('[data-day-track]').forEach(b => b.addEventListener('click', () => { dayTrack = b.dataset.dayTrack; render(); }));
+  const showAnswer = question => {
+    const box = $('#ask-answer'), { title, lines } = answer(question, data);
+    box.hidden = false;
+    box.innerHTML = `<p class="ask-question">“${esc(question)}”</p><h3>${esc(title)}</h3><ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+  };
+  page.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => showAnswer(b.dataset.ask)));
+  $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) showAnswer(q); });
 }
 function bindWeekEvents() {
   const page = $('#page-content');
+  page.querySelectorAll('[data-add-month]').forEach(b => b.addEventListener('click', () => { const m = b.dataset.addMonth; addOrEdit('task', null, { date: !m ? '' : m === todayIso().slice(0, 7) ? todayIso() : `${m}-01` }); }));
+  page.querySelectorAll('[data-drop-month]').forEach(col => {
+    col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('is-drop'); });
+    col.addEventListener('dragleave', e => { if (!col.contains(e.relatedTarget)) col.classList.remove('is-drop'); });
+    col.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation(); col.classList.remove('is-drop');
+      const task = data.tasks.find(t => t.id === e.dataTransfer.getData('text/plain')), month = col.dataset.dropMonth;
+      if (!task) return;
+      if (!month) task.date = '';
+      else {
+        const day = Number((task.date || todayIso()).slice(8, 10)), lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+        task.date = `${month}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+        if (task.date < todayIso()) task.date = todayIso();
+      }
+      save(task.date ? `Prazo movido para ${shortDate(task.date)}.` : 'Tarefa movida para Sem data.', false); render();
+    });
+  });
   const goWeek = value => { weekStart = value === 'today' ? weekOf(todayIso()) : value === 'wedding' ? weekOf(data.wedding.date) : addDays(weekStart, 7 * Number(value)); animateNextRender = false; render(); };
   page.querySelectorAll('[data-week]').forEach(b => b.addEventListener('click', () => goWeek(b.dataset.week)));
   page.querySelectorAll('[data-add-task]').forEach(b => b.addEventListener('click', () => addOrEdit('task', null, { date: b.dataset.addTask })));
@@ -751,6 +1261,11 @@ const guideSteps = [
   { page: 'convidados', target: '.nav-item[data-page="convidados"]', title: 'Convidados', text: 'Cadastre cada convidado com grupo, telefone, acompanhantes e status do convite. Busque por nome, filtre por grupo ou importe uma lista pronta em TXT.' },
   { page: 'cerimonia', target: '.nav-item[data-page="cerimonia"]', title: 'Cerimônia & músicas', text: 'Monte a ordem de entrada do cortejo com participantes, músicas e orientações. Exporte o roteiro em PDF para os padrinhos.' },
   { page: 'cerimonial', target: '.nav-item[data-page="cerimonial"]', title: 'Cerimonial do dia D', text: 'O passo a passo do dia, com horários e responsáveis. Marque cada horário como concluído e exporte em PDF para a equipe.' },
+  { page: 'inspiracoes', target: '.nav-item[data-page="inspiracoes"]', title: 'Inspirações', text: 'Murais com fotos, links e paleta de cores para decoração, vestido, buquê, bolo e o que mais quiserem, prontos para mostrar aos fornecedores.' },
+  { page: 'documentos', target: '.nav-item[data-page="documentos"]', title: 'Documentos', text: 'Todos os contratos, comprovantes e documentos num lugar só, com a lista dos documentos essenciais do casamento. Os arquivos anexados nos gastos, fornecedores e tarefas também aparecem aqui.' },
+  { page: 'diad', target: '.nav-item[data-page="diad"]', title: 'Central do Dia D', text: 'O roteiro do grande dia com o cerimonial e a chegada dos fornecedores, contatos de emergência, endereços, plano B e kit de emergência. Em "Roteiro por pessoa", cada um recebe só o que é dele pelo WhatsApp ou em PDF.' },
+  { page: 'luademel', target: '.nav-item[data-page="luademel"]', title: 'Lua de mel', text: 'Destinos, comparação de hotéis e passagens, reservas, roteiro por dia, malas e quanto falta economizar, com o orçamento separado do casamento.' },
+  { page: 'fornecedores', target: '.nav-item[data-page="fornecedores"]', title: 'Fornecedores', text: 'Cadastre cada orçamento com preço, descontos, taxas, o que está incluído e as condições. Compare as opções lado a lado e toque em Contratar: o valor e as parcelas entram no financeiro sozinhos.' },
   { page: 'financeiro', target: '.nav-item[data-page="financeiro"]', title: 'Financeiro', text: 'Registre os gastos por categoria, com valor previsto, valor pago e forma de pagamento. Clique numa categoria para abrir ou recolher. Também dá para importar TXT e exportar PDF.' },
   { target: '#quick-add', title: 'Nova tarefa', text: 'Atalho para criar uma tarefa no cronograma a partir de qualquer página.' },
   { target: '#edit-wedding', title: 'Detalhes do casamento', text: 'Altere os nomes do casal, a data, o horário e o local. A contagem regressiva se atualiza na hora.' },
@@ -816,7 +1331,7 @@ document.addEventListener('keydown', event => {
   if (event.key === 'ArrowRight') $('#guide-next').click();
   if (event.key === 'ArrowLeft' && guideIndex > 0) $('#guide-prev').click();
 });
-$('#edit-wedding').addEventListener('click', () => openModal('Detalhes do casamento', recordForm('wedding'), values => { data.wedding = values; save('Detalhes do casamento atualizados.'); render(); }));
+$('#edit-wedding').addEventListener('click', () => openModal('Detalhes do casamento', recordForm('wedding'), values => { data.wedding = { ...data.wedding, ...values, guestsExpected: Number(values.guestsExpected || 0), budget: Number(values.budget || 0) }; save('Detalhes do casamento atualizados.'); render(); }));
 $('#modal-close').addEventListener('click', () => $('#modal').close());
 $('#modal-cancel').addEventListener('click', () => $('#modal').close());
 $('#import-close').addEventListener('click', () => $('#import-dialog').close());
@@ -872,7 +1387,8 @@ onAuthStateChanged(auth, async user => {
     $('#auth-panel').hidden = false;
     return;
   }
-  const plannerRef = doc(db, 'planners', user.uid);
+  plannerId = user.uid;
+  let plannerRef = doc(db, 'planners', plannerId);
   try {
     let site = null;
     if (!isAdmin(user)) {
@@ -883,6 +1399,8 @@ onAuthStateChanged(auth, async user => {
         if (account.status !== 'pago') return showAccessMessage('O organizador será liberado assim que o pagamento for confirmado.');
         document.body.dataset.theme = `m${account.products.organizador}`;
         if (account.slug) site = (await getDoc(doc(db, 'sites', account.slug))).data() || null;
+        plannerSlug = account.slug || '';
+        if (account.plannerUid) { plannerId = account.plannerUid; plannerRef = doc(db, 'planners', plannerId); }
       }
     }
     $('#auth-panel').hidden = true;

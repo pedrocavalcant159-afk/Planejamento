@@ -29,6 +29,22 @@ No painel, abra o cliente → **Fotos e textos**:
 - `convite.html`, `lista.html`, `site.html`: páginas públicas que os convidados abrem.
 - `organizador.html`: só redireciona para `index.html` (mantido para links antigos).
 
+## Cerimonialista virtual (organizador)
+
+A lógica fica em `lib/planner.js` e só usa os dados do planejamento, sem IA e sem servidor:
+
+- **Nosso casamento**: data, convidados previstos, orçamento máximo, estilo e tipo de cerimônia (em "Detalhes do casamento"). Gera o orçamento por convidado e a divisão sugerida por categoria (`BUDGET_SPLIT`).
+- **Fornecedores**: orçamentos com preço, desconto, taxas, itens inclusos e condições, comparados lado a lado por categoria. "Contratar" cria o gasto no financeiro com entrada e parcelas.
+- **Parcelas**: cada gasto pode ter parcelas com vencimento; marcar como paga atualiza o valor pago.
+- **Checklist do casamento**: etapas por prazo (12 meses antes até a semana do casamento), ajustadas pelo estilo, tipo de cerimônia e número de convidados. Contratações ficam resolvidas sozinhas quando há fornecedor contratado ou gasto na categoria.
+- **Convidados**: família, restrições alimentares, mesas (arrastar para a mesa), confirmações do site de casamento trazidas para a lista e exportação para o buffet (PDF) e planilha (CSV).
+- **Central do Dia D**: linha do tempo do dia (cerimonial, chegada dos fornecedores, tarefas e endereços), contatos de emergência, endereços, plano B, kit de emergência e roteiro por pessoa (WhatsApp ou PDF).
+- **Lua de mel**: destinos, comparação de hospedagens e passagens, reservas com anexos, roteiro por dia, malas e documentos, "Nossa viagem dos sonhos" e quanto falta economizar.
+- **Inspirações**: murais com fotos, links e paleta de cores para cada parte do casamento.
+- **Documentos**: documentos essenciais (checklist), pastas próprias e todos os arquivos e links anexados em qualquer parte do planejamento.
+- **Acesso do casal**: no painel admin, "Criar acesso do parceiro(a)" cria um segundo login. A conta dele tem `plannerUid` em `accounts` apontando para o planejamento do dono, e os dois editam o mesmo planejamento em tempo real.
+- **Alertas e perguntas** no painel: parcelas vencidas e a vencer, hora de contratar, tarefas atrasadas, orçamento estourado, convidados sem resposta.
+
 ## Configuração (uma vez)
 
 1. **E-mail de administrador**: troque `seu-email-de-admin@exemplo.com` pelo seu e-mail em `lib/firebase.js` (`ADMIN_EMAILS`) **e** em `firestore.rules`.
