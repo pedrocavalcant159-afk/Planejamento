@@ -43,7 +43,7 @@ A lógica fica em `lib/planner.js` e só usa os dados do planejamento, sem IA e 
 - **Inspirações**: murais com fotos, links e paleta de cores para cada parte do casamento.
 - **Documentos**: documentos essenciais (checklist), pastas próprias e todos os arquivos e links anexados em qualquer parte do planejamento.
 - **Acesso do casal**: no painel admin, "Criar acesso do parceiro(a)" cria um segundo login. A conta dele tem `plannerUid` em `accounts` apontando para o planejamento do dono, e os dois editam o mesmo planejamento em tempo real.
-- **Alertas e perguntas** no painel: parcelas vencidas e a vencer, hora de contratar, tarefas atrasadas, orçamento estourado, convidados sem resposta.
+- **Alertas e perguntas** no painel: parcelas vencidas e a vencer, hora de contratar, tarefas atrasadas, orçamento estourado, convidados sem resposta. A cerimonialista conversa em formato de chat (sem IA): entende pedidos soltos ("tô perdida", "me dá uma dica", "tô nervosa", "oi"), dá os próximos passos pelo planejamento do casal, dicas por assunto (vestido, buffet, decoração, foto, música, convites, lua de mel, plano B, cartório...) e sugere perguntas de continuação.
 
 ## Configuração (uma vez)
 

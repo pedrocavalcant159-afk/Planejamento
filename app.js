@@ -144,6 +144,7 @@ let weekStart = weekOf(todayIso());
 let timelineView = 'semana';
 let showDiscarded = false;
 let vendorTab = 'Todos';
+let askThread = []; // conversa com a cerimonialista virtual (só nesta sessão)
 let dayTrack = 'Tudo';
 const contractStatuses = ['Sem contrato', 'Enviado para assinatura', 'Assinado'];
 const tracks = ['Geral', 'Noiva', 'Noivo'];
@@ -246,6 +247,11 @@ function render() {
   });
   bindPageEvents(); updateProgress();
 }
+function askThreadHtml() {
+  const chips = list => `<div class="ask-chips">${list.map(q => `<button type="button" class="ask-chip" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
+  const hello = `<div class="ask-msg is-bot"><p>Oi! ♡ Sou a sua cerimonialista virtual. Pode me contar como está se sentindo ou perguntar o que quiser sobre o casamento.</p>${askThread.length ? '' : chips(QUESTIONS)}</div>`;
+  return hello + askThread.map((m, i) => `<div class="ask-msg is-me">${esc(m.question)}</div>${m.reply ? `<div class="ask-msg is-bot"><h3>${esc(m.reply.title)}</h3>${m.reply.intro ? `<p>${esc(m.reply.intro)}</p>` : ''}${m.reply.lines.length ? (m.reply.lines.every(l => /^\d+\. /.test(l)) ? `<ol>${m.reply.lines.map(l => `<li>${esc(l.replace(/^\d+\. /, ''))}</li>`).join('')}</ol>` : `<ul>${m.reply.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`) : ''}${m.reply.go?.page ? `<button type="button" class="text-button" data-ask-go="${esc(m.reply.go.page)}">${esc(m.reply.go.label || 'Abrir')} → ${esc(navLabels[m.reply.go.page] || '')}</button>` : ''}${i === askThread.length - 1 && m.reply.follow?.length ? chips(m.reply.follow) : ''}</div>` : '<div class="ask-msg is-bot is-typing" aria-label="Digitando"><i></i><i></i><i></i></div>'}`).join('');
+}
 function heading(kicker, title, desc, action = '') { return `<div class="page-heading"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${desc}</p></div><div class="heading-actions">${action}</div></div>`; }
 function renderDashboard() {
   const countdown = countdownState();
@@ -261,7 +267,7 @@ function renderDashboard() {
   ${weddingProfile()}
   <section class="assistant-grid">
     <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Sua cerimonialista virtual</h2><p class="panel-subtitle">O que precisa de atenção agora</p></div></div><div class="alert-list">${alerts(data).map(a => `<button type="button" class="alert-item alert-${a.level}" ${a.action ? `data-action="${a.action}"` : a.page ? `data-go="${a.page}"` : 'disabled'}><span class="alert-dot" aria-hidden="true"></span><span><strong>${esc(a.title)}</strong><small>${esc(a.text)}</small></span></button>`).join('')}</div></article>
-    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Pergunte à cerimonialista</h2><p class="panel-subtitle">Respostas com os dados do seu casamento</p></div></div><div class="ask-chips">${QUESTIONS.map(q => `<button type="button" class="ask-chip" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div><form class="ask-form" id="ask-form"><input name="q" placeholder="Ex.: quanto posso gastar com decoração?" aria-label="Sua pergunta" autocomplete="off"><button class="button button-primary button-sm" type="submit">Perguntar</button></form><div class="ask-answer" id="ask-answer" aria-live="polite" hidden></div></article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Pergunte à cerimonialista</h2><p class="panel-subtitle">Converse do seu jeito. Eu respondo com os dados do seu casamento</p></div>${askThread.length ? '<button type="button" class="text-button" data-ask-clear>Limpar conversa</button>' : ''}</div><div class="ask-thread" id="ask-thread" aria-live="polite">${askThreadHtml()}</div><form class="ask-form" id="ask-form"><input name="q" placeholder="Escreva do seu jeito: tô perdida, me dá uma dica..." aria-label="Sua pergunta" autocomplete="off"><button class="button button-primary button-sm" type="submit">Enviar</button></form></article>
   </section>
   <section class="notice-card"><div><strong>${next ? 'Próximo passo' : data.tasks.length ? 'Tudo em dia' : 'Vamos começar?'}</strong><p>${next ? `${esc(next.title)} · ${esc(next.date ? shortDate(next.date) : 'Prioridade')}${next.time ? `, ${esc(next.time)}` : ''}` : data.tasks.length ? 'Todas as tarefas do cronograma foram concluídas. Agora é só aproveitar.' : 'Seu organizador está novinho. Adicione a primeira tarefa do cronograma ou cadastre os convidados.'}</p></div>${next ? `<button class="button button-secondary" data-task-done="${next.id}">Marcar como feita</button>` : data.tasks.length ? '' : `<button class="button button-secondary" data-action="add-task">${icon('plus')} Adicionar tarefa</button>`}</section>
   <section class="stats-grid">${stat('convidados', 'users', 'Confirmados', confirmedGuests(), `de ${totalGuests()} pessoas na lista`)}${stat('financeiro', 'wallet', 'Total pago', money(spent()), `de ${money(planned())} orçados`)}${stat('financeiro', 'clock', 'Saldo a pagar', money(due()), `${paidRatio}% já quitado ou ganho`)}${stat('cronograma', 'check', 'Tarefas', `${doneTasks}/${data.tasks.length}`, `${progress()}% do cronograma`)}${stat('checklist', 'box', 'Itens no local', `${onSite}/${data.supplies.length}`, 'do checklist do que levar')}</section>
@@ -1175,13 +1181,20 @@ function page_bindSmart() {
   }));
   page.querySelectorAll('[data-vendor-tab]').forEach(b => b.addEventListener('click', () => { vendorTab = b.dataset.vendorTab; render(); }));
   page.querySelectorAll('[data-day-track]').forEach(b => b.addEventListener('click', () => { dayTrack = b.dataset.dayTrack; render(); }));
-  const showAnswer = question => {
-    const box = $('#ask-answer'), { title, lines } = answer(question, data);
-    box.hidden = false;
-    box.innerHTML = `<p class="ask-question">“${esc(question)}”</p><h3>${esc(title)}</h3><ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`;
+  const thread = $('#ask-thread');
+  const paint = () => { thread.innerHTML = askThreadHtml(); thread.scrollTop = thread.scrollHeight; bindThread(); };
+  const ask = question => {
+    askThread.push({ question, reply: null });
+    paint();
+    setTimeout(() => { askThread[askThread.length - 1].reply = answer(question, data); askThread = askThread.slice(-8); paint(); }, 450);
   };
-  page.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => showAnswer(b.dataset.ask)));
-  $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) showAnswer(q); });
+  const bindThread = () => {
+    thread.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => ask(b.dataset.ask)));
+    thread.querySelectorAll('[data-ask-go]').forEach(b => b.addEventListener('click', () => setPage(b.dataset.askGo)));
+  };
+  if (thread) { bindThread(); thread.scrollTop = thread.scrollHeight; }
+  page.querySelector('[data-ask-clear]')?.addEventListener('click', () => { askThread = []; render(); });
+  $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) { e.target.q.value = ''; ask(q); } });
 }
 function bindWeekEvents() {
   const page = $('#page-content');
