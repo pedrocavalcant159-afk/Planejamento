@@ -38,7 +38,7 @@ A lógica fica em `lib/planner.js` e só usa os dados do planejamento, sem IA e 
 - **Parcelas**: cada gasto pode ter parcelas com vencimento; marcar como paga atualiza o valor pago.
 - **Checklist do casamento**: etapas por prazo (12 meses antes até a semana do casamento), ajustadas pelo estilo, tipo de cerimônia e número de convidados. Contratações ficam resolvidas sozinhas quando há fornecedor contratado ou gasto na categoria.
 - **Convidados**: família, restrições alimentares, mesas (arrastar para a mesa), confirmações do site de casamento trazidas para a lista e exportação para o buffet (PDF) e planilha (CSV).
-- **Central do Dia D**: linha do tempo do dia (cerimonial, chegada dos fornecedores, tarefas e endereços), contatos de emergência, endereços, plano B, kit de emergência e roteiro por pessoa (WhatsApp ou PDF).
+- **Dia do casamento**: linha do tempo do dia (cerimonial, chegada dos fornecedores, tarefas e endereços), contatos de emergência, endereços, plano B, kit de emergência e roteiro por pessoa (WhatsApp ou PDF).
 - **Lua de mel**: destinos, comparação de hospedagens e passagens, reservas com anexos, roteiro por dia, malas e documentos, "Nossa viagem dos sonhos" e quanto falta economizar.
 - **Inspirações**: murais com fotos, links e paleta de cores para cada parte do casamento.
 - **Documentos**: documentos essenciais (checklist), pastas próprias e todos os arquivos e links anexados em qualquer parte do planejamento.
