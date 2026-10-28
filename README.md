@@ -2,7 +2,7 @@
 
 Site estático (HTML, CSS e JavaScript) conectado ao Firebase Authentication e ao Cloud Firestore. Um único site atende todos os clientes: cada casal recebe links próprios (`convite.html?c=marina-rafael`) e um usuário e senha para a área do cliente.
 
-## Produtos (3 modelos cada: Jardim, Rosé e Minimal)
+## Produtos
 
 | Produto | Página | Usa os dados de |
 | --- | --- | --- |
@@ -11,6 +11,15 @@ Site estático (HTML, CSS e JavaScript) conectado ao Firebase Authentication e a
 | Ebook PDF chá de panela | baixado na área do cliente | Chá de panela |
 | Site de casamento | `site.html?c=<link>` | Casamento |
 | Organizador de casamento | `index.html` (com login) | Casamento |
+
+Modelos do convite, da lista e do site: **Terracota**, **Figurinha**, **Elegante** e **Oliva** (`TEMPLATES` em `lib/catalog.js`). O ebook e o organizador continuam com Jardim, Rosé e Gala (`MODELS`).
+
+## Fotos e textos de cada casal
+
+No painel, abra o cliente → **Fotos e textos**:
+
+- **Fotos**: foto principal, dois rostos recortados e até 4 fotos de galeria (polaroids com legenda). As fotos são reduzidas no navegador e salvas em `sites/{link}/fotos/{slot}`. Um PNG sem fundo vira figurinha com contorno branco.
+- **Textos**: nome do evento, frases, boas-vindas, roteiro do dia, Pix com valores divertidos, paleta de cores, nossa história e informações do site. Campo vazio usa o texto padrão (`lib/content.js`). Fica em `sites/{link}.custom`.
 
 ## Páginas
 
@@ -46,6 +55,7 @@ Coleções do Firestore:
 - `sites/{link}`: dados públicos das páginas (casal, datas, locais, modelos, se está liberado).
 - `sites/{link}/rsvps`: confirmações de presença do convite e do site.
 - `sites/{link}/reservas`: presentes escolhidos na lista (um por presente).
+- `sites/{link}/fotos`: fotos do casal usadas nas páginas (só o admin envia).
 - `planners/{uid}`: dados do organizador.
 - `settings/main`: chave Pix e preços.
 

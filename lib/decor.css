@@ -1,0 +1,83 @@
+/* Peças visuais compartilhadas (lib/decor.js): desenhos, fotos, botões estilo app, Pix e paleta. */
+:root { --ease-bounce: cubic-bezier(.2, .9, .3, 1.35); }
+
+.doodle { display: block; width: 64px; height: 64px; }
+.doodle-bg { background-image: var(--doodles); background-size: 240px 240px; }
+.torn { display: block; width: 100%; height: 22px; }
+
+/* Tábua de cortar com a data */
+.board { position: relative; display: inline-block; width: 230px; color: var(--wood, #5e4636); }
+.board-shape { display: block; width: 100%; height: auto; filter: drop-shadow(0 8px 12px rgba(60, 40, 20, .25)); }
+.board-text { position: absolute; top: 8%; right: 25%; bottom: 8%; left: 3%; display: grid; place-content: center; color: #fff8ec; font-family: var(--font-hand); line-height: 1.05; text-align: center; }
+.board-text strong { font-size: 27px; font-weight: 400; }
+.board-text span { font-size: 20px; }
+
+.sprig { display: block; width: 110px; color: var(--accent); }
+
+/* Botões grandes estilo app */
+.app-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 18px; }
+.app-button { display: grid; width: 92px; justify-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 500; line-height: 1.2; text-align: center; text-decoration: none; }
+.app-icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 18px; background: var(--accent); color: #fff; box-shadow: 0 12px 20px -12px var(--accent-dark); transition: transform .35s var(--ease-bounce), box-shadow .3s; }
+.app-icon svg { width: 30px; height: 30px; }
+.app-button:hover .app-icon, .app-button:focus-visible .app-icon { transform: translateY(-4px) scale(1.05); }
+[data-model="1"] .app-icon { border: 1.5px solid var(--accent); border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: 0 10px 18px -14px var(--accent-dark); }
+[data-model="2"] .app-icon { border-radius: 17px; background: var(--app-gradient); box-shadow: 0 14px 22px -12px #2f4d12, inset 0 2px 0 rgba(255, 255, 255, .35), inset 0 -4px 0 rgba(0, 0, 0, .14); }
+[data-model="2"] .app-icon svg { width: 34px; height: 34px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25)); }
+[data-model="3"] .app-buttons { flex-direction: column; align-items: center; gap: 10px; }
+[data-model="3"] .app-button { display: flex; width: min(330px, 100%); min-height: 44px; align-items: center; justify-content: center; gap: 10px; padding: 8px 20px; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent); font: 500 14px var(--font-display); letter-spacing: 2.5px; text-transform: uppercase; transition: background .3s, color .3s; }
+[data-model="3"] .app-button:hover { background: var(--accent); color: #fff; }
+[data-model="3"] .app-icon { width: 18px; height: 18px; border-radius: 0; background: none; color: inherit; box-shadow: none; }
+[data-model="3"] .app-icon svg { width: 18px; height: 18px; }
+[data-model="3"] .app-button:hover .app-icon { transform: none; }
+[data-model="4"] .app-icon { border: 1.6px dashed var(--accent); border-radius: 16px; background: var(--surface); color: var(--accent-dark); box-shadow: none; }
+[data-model="4"] .app-button { font: 18px/1.1 var(--font-hand); }
+
+/* Fotos */
+.sticker { position: relative; display: inline-block; }
+.sticker img { display: block; width: 100%; height: auto; }
+.sticker.is-cutout img { filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff) drop-shadow(0 12px 14px rgba(0, 0, 0, .22)); }
+.sticker.is-photo img { aspect-ratio: 1; object-fit: cover; border: 5px solid #fff; border-radius: 47% 53% 45% 55% / 53% 45% 55% 47%; box-shadow: 0 12px 20px -8px rgba(0, 0, 0, .32); }
+[data-model="1"] .sticker.is-cutout img { filter: grayscale(1) contrast(1.08) drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff) drop-shadow(0 12px 14px rgba(0, 0, 0, .25)); }
+[data-model="1"] .sticker.is-photo img { filter: grayscale(1) contrast(1.08); }
+
+.polaroid { display: inline-block; margin: 0; padding: 9px 9px 0; background: #fff; box-shadow: 0 16px 28px -14px rgba(0, 0, 0, .4); transform: rotate(var(--tilt, 0deg)); transition: transform .4s var(--ease-bounce); }
+.polaroid:hover { transform: rotate(0deg) scale(1.04); }
+.polaroid img { display: block; width: 100%; aspect-ratio: 1 / 1.04; object-fit: cover; }
+.polaroid figcaption { padding: 8px 4px 11px; color: #45453a; font: 20px/1.1 var(--font-hand); text-align: center; }
+.polaroid:not(:has(figcaption)) { padding-bottom: 30px; }
+.gallery { display: grid; max-width: 440px; grid-template-columns: repeat(2, 1fr); gap: 16px 16px; margin: 0 auto; }
+.gallery .polaroid:nth-child(2n) { margin-top: 28px; }
+
+.round-photo { display: block; overflow: hidden; width: 180px; aspect-ratio: 1; border: 6px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1.5px var(--accent), 0 18px 28px -16px rgba(0, 0, 0, .45); }
+.round-photo img, .wavy-inner img, .cover-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.wavy-photo { display: block; width: 250px; aspect-ratio: 4 / 3.3; padding: 8px; background: #fff; clip-path: url(#wave-rect); }
+.wavy-inner { display: block; width: 100%; height: 100%; clip-path: url(#wave-rect); }
+.cover-photo { position: relative; overflow: hidden; aspect-ratio: 4 / 3.6; }
+.cover-photo::after { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, var(--bg) 98%); content: ''; }
+
+/* Enfeites */
+.bill { position: absolute; width: 38px; opacity: .85; animation: bill-fall 7s linear infinite; }
+@keyframes bill-fall { from { transform: translateY(-30px) rotate(-20deg); } to { transform: translateY(260px) rotate(40deg); opacity: 0; } }
+.wax-seal { display: grid; width: 86px; height: 86px; place-items: center; border-radius: 50%; background: radial-gradient(circle at 34% 28%, #fff3c4 0%, #e8c66f 20%, #c79a3c 48%, #9a7226 76%, #74551a 100%); box-shadow: 0 0 0 4px rgba(201, 162, 79, .35), 0 10px 20px rgba(0, 0, 0, .45), inset 0 -5px 9px rgba(90, 60, 10, .45), inset 0 4px 6px rgba(255, 240, 200, .5); color: #6b4e12; font: 600 30px/1 'Cormorant Garamond', Georgia, serif; letter-spacing: 1px; text-shadow: 0 1px 0 rgba(255, 240, 200, .75), 0 -1px 0 rgba(80, 55, 10, .35); }
+.wax-text { padding: 12px; border: 1.5px solid rgba(110, 80, 20, .35); border-radius: 50%; }
+
+/* Paleta de cores */
+.palette { display: grid; justify-items: center; gap: 12px; }
+.palette-swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.swatch { width: 50px; height: 50px; border: 1px solid rgba(0, 0, 0, .08); border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .55), 0 6px 12px -8px rgba(0, 0, 0, .4); }
+[data-model="4"] .swatch, [data-model="3"] .swatch { border-radius: 6px; }
+.palette-note { max-width: 380px; margin: 0; color: var(--muted); font-size: 14px; text-align: center; }
+
+/* Pix com valores divertidos */
+.pix-block { position: relative; display: grid; justify-items: center; gap: 20px; text-align: center; }
+.pix-title { margin: 0; color: var(--ink); font-size: 30px; line-height: 1.15; }
+.pix-gifts { display: grid; width: 100%; max-width: 440px; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.pix-gift { display: grid; align-content: center; gap: 4px; min-height: 104px; padding: 14px 12px; border-radius: 14px; background: var(--surface); box-shadow: 0 14px 24px -18px rgba(0, 0, 0, .5); transform: rotate(var(--tilt, 0deg)); transition: transform .35s var(--ease-bounce); }
+.pix-gift:hover { transform: rotate(0deg) scale(1.05); }
+.pix-amount { color: var(--accent-dark); font: 600 24px/1 var(--font-display); }
+.pix-caption { color: var(--text); font: 17px/1.2 var(--font-hand); }
+.pix-key { display: grid; justify-items: center; gap: 4px; padding: 18px 26px; border-radius: 14px; background: var(--accent-soft); }
+.pix-label { color: var(--accent-dark); font-size: 12px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.pix-key strong { color: var(--ink); font-size: 20px; word-break: break-all; }
+.pix-key small { color: var(--muted); }
+.pix-copy { margin-top: 8px; }

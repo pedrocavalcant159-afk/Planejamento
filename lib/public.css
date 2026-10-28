@@ -1,68 +1,112 @@
-/* Base das páginas públicas. Cada modelo define as mesmas variáveis em <html data-model="1|2|3">.
-   Fontes esperadas no <head>: Outfit, Cormorant Garamond e Great Vibes (Google Fonts). */
+/* Base das páginas públicas. Cada modelo define as mesmas variáveis em <html data-model="1|2|3|4">.
+   Fontes no <head>: Outfit, Fraunces, Caveat, Playfair Display, Pinyon Script, Cormorant Garamond e Patrick Hand. */
 :root, [data-model="1"] {
-  --bg: #f4f1e8;
-  --surface: #fffdf8;
-  --ink: #2f3320;
-  --text: #4d5138;
-  --muted: #858a6c;
-  --line: #e1dfcf;
-  --accent: #5f6b2a;
-  --accent-dark: #4a5420;
-  --accent-soft: #e8ebd6;
+  /* Terracota: caramelo, rosado, papel rasgado e fotos em preto e branco */
+  --bg: #f6ece4;
+  --surface: #fffaf6;
+  --paper: #fbf1ea;
+  --ink: #4a3022;
+  --text: #6a4c3c;
+  --muted: #a3887a;
+  --line: #ead6c8;
+  --accent: #b2743f;
+  --accent-dark: #8a5530;
+  --accent-soft: #f3e1d3;
+  --brand: #bf8152;
+  --blush: #f2dcd2;
   --on-accent: #fff;
-  --font-display: 'Cormorant Garamond', Georgia, serif;
-  --font-script: 'Cormorant Garamond', Georgia, serif;
-  --script-style: italic;
+  --field-bg: #fff;
+  --font-display: Fraunces, Georgia, serif;
+  --font-script: Caveat, cursive;
+  --font-hand: Caveat, cursive;
   --font-body: Outfit, system-ui, sans-serif;
-  --display-weight: 500;
+  --script-style: normal;
+  --display-weight: 300;
   --display-transform: none;
   --display-tracking: -.5px;
-  --radius: 18px;
+  --radius: 22px;
 }
 [data-model="2"] {
-  --bg: #fbf3f1;
-  --surface: #fffaf9;
-  --ink: #4a2c2f;
-  --text: #64474a;
-  --muted: #a08386;
-  --line: #f0dcdc;
-  --accent: #b56576;
-  --accent-dark: #974f5f;
-  --accent-soft: #f6e3e5;
+  /* Figurinha: verde folha, rostos recortados, polaroids e botões estilo app */
+  --bg: #fbfcf8;
+  --surface: #fff;
+  --paper: #fff;
+  --ink: #2e3a22;
+  --text: #4a573d;
+  --muted: #8c977f;
+  --line: #e2e9d8;
+  --accent: #66972f;
+  --accent-dark: #4b7620;
+  --accent-soft: #edf5e2;
+  --brand: #6b9c34;
+  --blush: #f1f6ea;
   --on-accent: #fff;
-  --font-display: 'Cormorant Garamond', Georgia, serif;
-  --font-script: 'Great Vibes', cursive;
-  --script-style: normal;
+  --field-bg: #fff;
+  --app-gradient: linear-gradient(160deg, #96c95a 0%, #5d8f28 100%);
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-script: 'Pinyon Script', cursive;
+  --font-hand: Caveat, cursive;
   --font-body: Outfit, system-ui, sans-serif;
-  --display-weight: 500;
+  --script-style: normal;
+  --display-weight: 400;
   --display-transform: none;
   --display-tracking: 0;
-  --radius: 24px;
+  --radius: 20px;
 }
-/* Modelo 3 "Gala": noite escura, dourado e brilho */
 [data-model="3"] {
-  color-scheme: dark;
-  --bg: #0d0c0a;
-  --surface: #17150f;
-  --ink: #f5ecd7;
-  --text: #ddd0b3;
-  --muted: #a39577;
-  --line: rgba(212, 175, 99, .24);
-  --accent: #d4af63;
-  --accent-dark: #e9c97f;
-  --accent-soft: rgba(212, 175, 99, .14);
-  --on-accent: #15120a;
-  --field-bg: rgba(255, 248, 230, .04);
-  --gold-gradient: linear-gradient(100deg, #b8913f 0%, #f6e3a8 28%, #d4af63 50%, #fff3cf 64%, #b8913f 100%);
+  /* Elegante: verde-musgo, selo de cera dourado, foto grande e ramos */
+  --bg: #fbfaf5;
+  --surface: #fff;
+  --paper: #fffefa;
+  --ink: #3b4232;
+  --text: #555c49;
+  --muted: #8f9383;
+  --line: #e3e1d6;
+  --accent: #4f5b3e;
+  --accent-dark: #3a4430;
+  --accent-soft: #eef0e6;
+  --brand: #56623f;
+  --blush: #f3f2ea;
+  --gold: #c9a24f;
+  --gold-gradient: linear-gradient(110deg, #9c7a2e 0%, #f3dc9a 30%, #c9a24f 52%, #fff1c8 66%, #9c7a2e 100%);
+  --on-accent: #fff;
+  --field-bg: #fff;
   --font-display: 'Cormorant Garamond', Georgia, serif;
-  --font-script: 'Great Vibes', cursive;
-  --script-style: normal;
+  --font-script: 'Pinyon Script', cursive;
+  --font-hand: 'Cormorant Garamond', Georgia, serif;
   --font-body: Outfit, system-ui, sans-serif;
+  --script-style: normal;
   --display-weight: 500;
   --display-transform: uppercase;
-  --display-tracking: 3px;
+  --display-tracking: 2px;
   --radius: 14px;
+}
+[data-model="4"] {
+  /* Oliva: creme e oliva, traço à mão, tábua com a data e Pix divertido */
+  --bg: #fbf8ef;
+  --surface: #fffdf7;
+  --paper: #fffdf6;
+  --ink: #45452f;
+  --text: #5d5d46;
+  --muted: #97957c;
+  --line: #e6e2cf;
+  --accent: #849462;
+  --accent-dark: #66754a;
+  --accent-soft: #eef0e1;
+  --brand: #93a26c;
+  --blush: #f2f2e4;
+  --wood: #5e4636;
+  --on-accent: #fff;
+  --field-bg: #fff;
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-script: Caveat, cursive;
+  --font-hand: 'Patrick Hand', Caveat, cursive;
+  --font-body: Outfit, system-ui, sans-serif;
+  --script-style: normal;
+  --display-weight: 500;
+  --display-transform: uppercase;
+  --display-tracking: 1.5px;
+  --radius: 16px;
 }
 
 * { box-sizing: border-box; }
@@ -81,10 +125,8 @@ a { color: inherit; }
 .btn:disabled { opacity: .55; cursor: default; }
 .btn-ghost { background: transparent; color: var(--accent); }
 .btn-ghost:hover { background: var(--accent-soft); color: var(--accent-dark); }
-[data-model="3"] .btn { border-color: transparent; background: var(--gold-gradient); background-size: 200% 100%; color: var(--on-accent); letter-spacing: 1.5px; text-transform: uppercase; font-size: 13px; font-weight: 600; box-shadow: 0 6px 24px rgba(212, 175, 99, .25); }
-[data-model="3"] .btn:hover { background-position: 100% 0; box-shadow: 0 8px 32px rgba(212, 175, 99, .4); }
-[data-model="3"] .btn-ghost { border-color: var(--accent); background: transparent; color: var(--accent); box-shadow: none; }
-[data-model="3"] .btn-ghost:hover { background: var(--accent-soft); color: var(--accent-dark); }
+[data-model="3"] .btn { letter-spacing: 1.5px; text-transform: uppercase; font-size: 13px; }
+[data-model="4"] .btn { font-family: var(--font-hand); font-size: 18px; letter-spacing: .3px; }
 /* Texto com efeito folha de ouro: use class="gold-text" */
 .gold-text { background: var(--gold-gradient, var(--accent)); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: gold-sheen 6s ease-in-out infinite; }
 @keyframes gold-sheen { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }

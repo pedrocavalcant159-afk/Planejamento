@@ -1,7 +1,7 @@
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { doc, getDoc, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { auth, db, isAdmin, loginToEmail } from './lib/firebase.js';
-import { PRODUCTS, MODELS, money, dateLong, esc, productLink } from './lib/catalog.js';
+import { PRODUCTS, money, dateLong, esc, productLink, modelName } from './lib/catalog.js';
 import { qrSvg } from './lib/pix.js';
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -32,7 +32,7 @@ function render() {
   const going = rsvps.filter(r => r.attending), notGoing = rsvps.filter(r => !r.attending);
   const giftName = id => gifts.find(g => g.id === id)?.name || id;
   const card = key => {
-    const url = productLink(key, account.slug), model = MODELS[account.products[key]]?.name || '';
+    const url = productLink(key, account.slug), model = modelName(key, account.products[key]);
     let actions = '';
     if (!paid) actions = '<span class="field-hint">Liberado após a confirmação do pagamento.</span>';
     else if (key === 'organizador') actions = `<a class="button button-primary button-sm" href="${esc(url)}">Abrir organizador</a>`;

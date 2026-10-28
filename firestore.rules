@@ -44,6 +44,12 @@ service cloud.firestore {
         allow read, delete: if isAdmin() || isOwner(slug);
       }
 
+      // Fotos do casal usadas nas páginas: todos leem, só o administrador envia.
+      match /fotos/{slot} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+
       // Presentes escolhidos: cada presente só pode ser escolhido uma vez (sem update).
       match /reservas/{giftId} {
         allow read: if true;

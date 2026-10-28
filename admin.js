@@ -2,8 +2,9 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/fireba
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword, deleteUser } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, onSnapshot, writeBatch, serverTimestamp, query, orderBy } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { auth, db, firebaseConfig, isAdmin, loginToEmail } from './lib/firebase.js';
-import { PRODUCTS, PRODUCT_KEYS, MODELS, STATUS, slugify, money, dateLong, esc, productLink } from './lib/catalog.js';
+import { PRODUCTS, PRODUCT_KEYS, TEMPLATES, STATUS, slugify, money, dateLong, esc, productLink, modelsFor, modelName } from './lib/catalog.js';
 import { pixPayload, qrSvg } from './lib/pix.js';
+import { PHOTO_SLOTS, CUSTOM_GROUPS } from './lib/content.js';
 
 // Segunda instância do Auth: cria e gerencia contas de clientes sem desconectar o administrador.
 const clientAuth = getAuth(initializeApp(firebaseConfig, 'gestao-clientes'));
@@ -36,7 +37,7 @@ const priceOf = key => Number(settings.prices?.[key] ?? PRODUCTS[key].price);
 const randomPassword = () => { const chars = 'abcdefghjkmnpqrstuvwxyz23456789'; const bytes = crypto.getRandomValues(new Uint8Array(8)); return [...bytes].map(b => chars[b % chars.length]).join(''); };
 const areaUrl = () => new URL('cliente.html', location.href).href;
 const statusBadge = status => `<span class="badge ${status === 'pago' ? 'badge-pago' : status === 'cancelado' ? 'badge-cancelado' : 'badge-pendente'}">${esc(STATUS[status]?.label || status)}</span>`;
-const productNames = products => Object.keys(products || {}).filter(k => PRODUCTS[k]).map(k => `${PRODUCTS[k].name} (${MODELS[products[k]]?.name || ''})`);
+const productNames = products => Object.keys(products || {}).filter(k => PRODUCTS[k]).map(k => `${PRODUCTS[k].name} (${modelName(k, products[k])})`);
 const txidFor = client => `EN${client.slug.replace(/[^a-z0-9]/gi, '')}`.slice(0, 25).toUpperCase();
 const pixFor = client => pixPayload({ key: settings.pixKey, name: settings.pixName, city: settings.pixCity, amount: client.amount, txid: txidFor(client), description: 'Entre Nos' });
 const whatsappUrl = (phone, text) => `https://wa.me/${String(phone || '').replace(/\D/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1')}?text=${encodeURIComponent(text)}`;
@@ -76,7 +77,7 @@ function render() {
   const rows = visible.map(c => `<tr data-open="${esc(c.uid)}">
     <td><div class="client-cell"><strong>${esc(c.couple)}</strong><small>${esc(c.slug)}</small></div></td>
     <td><span class="muted-cell">${esc(c.username)}</span></td>
-    <td><div class="product-chips">${Object.keys(c.products || {}).filter(k => PRODUCTS[k]).map(k => `<span class="product-chip">${esc(PRODUCTS[k].short)} <em>${esc(MODELS[c.products[k]]?.name || '')}</em></span>`).join('')}</div></td>
+    <td><div class="product-chips">${Object.keys(c.products || {}).filter(k => PRODUCTS[k]).map(k => `<span class="product-chip">${esc(PRODUCTS[k].short)} <em>${esc(modelName(k, c.products[k]))}</em></span>`).join('')}</div></td>
     <td>${money(c.amount)}</td>
     <td>${statusBadge(c.status)}</td>
     <td><span class="muted-cell">${c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('pt-BR') : '—'}</span></td>
@@ -135,7 +136,7 @@ function openClientForm(uid = null) {
       <div class="product-picker">${PRODUCT_KEYS.map(key => `<div class="product-option ${c.products[key] ? 'is-on' : ''}" data-product="${key}">
         <input type="checkbox" id="p-${key}" ${c.products[key] ? 'checked' : ''}>
         <label for="p-${key}">${esc(PRODUCTS[key].name)}<small>${PRODUCTS[key].event === 'cha' ? 'Chá de panela' : 'Casamento'}</small></label>
-        <select aria-label="Modelo de ${esc(PRODUCTS[key].name)}">${Object.entries(MODELS).map(([n, m]) => `<option value="${n}" ${Number(c.products[key] || 1) === Number(n) ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
+        <select aria-label="Modelo de ${esc(PRODUCTS[key].name)}">${Object.entries(modelsFor(key)).map(([n, m]) => `<option value="${n}" ${Number(c.products[key] || 1) === Number(n) ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
         <span class="price">${money(priceOf(key))}</span></div>`).join('')}</div>
       ${eventBlock('cha', 'Chá de panela', 'Usado no convite, na lista de presentes e no ebook.')}
       ${eventBlock('casamento', 'Casamento', 'Usado no site de casamento e no organizador.')}
@@ -196,7 +197,7 @@ function openClientForm(uid = null) {
 function writeClientDocs(batch, client) {
   batch.set(doc(db, 'clients', client.uid), { ...client, updatedAt: serverTimestamp() }, { merge: true });
   batch.set(doc(db, 'accounts', client.uid), { slug: client.slug, couple: client.couple, products: client.products, status: client.status, amount: client.amount, pix: client.status === 'aguardando' ? pixFor(client) : '', updatedAt: serverTimestamp() });
-  batch.set(doc(db, 'sites', client.slug), { slug: client.slug, couple: client.couple, ownerUid: client.uid, active: client.status === 'pago', products: client.products, casamento: client.casamento, cha: client.cha, updatedAt: serverTimestamp() });
+  batch.set(doc(db, 'sites', client.slug), { slug: client.slug, couple: client.couple, ownerUid: client.uid, active: client.status === 'pago', products: client.products, casamento: client.casamento, cha: client.cha, custom: client.custom || {}, updatedAt: serverTimestamp() });
 }
 
 async function createClient(values) {
@@ -265,7 +266,7 @@ async function removeClient(uid) {
   if (!client || !confirm(`Excluir ${client.couple}?\n\nO acesso, os links e todos os dados do casal serão apagados. Esta ação não pode ser desfeita.`)) return;
   try {
     await withClientSession(client, user => deleteUser(user)).catch(e => { if (e.code !== 'auth/invalid-credential' && e.code !== 'auth/user-not-found') throw e; });
-    for (const sub of ['rsvps', 'reservas']) {
+    for (const sub of ['rsvps', 'reservas', 'fotos']) {
       const snap = await getDocs(collection(db, 'sites', client.slug, sub));
       await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
     }
@@ -295,7 +296,7 @@ function openDetail(uid, justCreated = false) {
       ${c.notes ? `<div class="detail-item"><span>Observações</span><strong>${esc(c.notes)}</strong></div>` : ''}
     </div>
     <p class="detail-section-title">Produtos e links</p>
-    <div class="link-list">${links.map(k => { const url = productLink(k, c.slug); return `<div class="link-row"><div><strong>${esc(PRODUCTS[k].name)} · ${esc(MODELS[c.products[k]]?.name || '')}</strong><small>${url ? esc(url) : 'Download na área do cliente'}</small></div>${url ? `<div class="row-buttons"><button class="button button-secondary button-sm" data-copy="${esc(url)}">Copiar</button><a class="button button-secondary button-sm" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a></div>` : ''}</div>`; }).join('')}
+    <div class="link-list">${links.map(k => { const url = productLink(k, c.slug); return `<div class="link-row"><div><strong>${esc(PRODUCTS[k].name)} · ${esc(modelName(k, c.products[k]))}</strong><small>${url ? esc(url) : 'Download na área do cliente'}</small></div>${url ? `<div class="row-buttons"><button class="button button-secondary button-sm" data-copy="${esc(url)}">Copiar</button><a class="button button-secondary button-sm" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a></div>` : ''}</div>`; }).join('')}
       <div class="link-row"><div><strong>Área do cliente</strong><small>${esc(areaUrl())}</small></div><div class="row-buttons"><button class="button button-secondary button-sm" data-copy="${esc(areaUrl())}">Copiar</button></div></div></div>
     ${c.status === 'pago' ? '' : '<p class="field-hint" style="margin-top:8px">Os links públicos só funcionam depois que o pedido for marcado como pago.</p>'}
     <p class="detail-section-title">Mensagens para o cliente</p>
@@ -309,6 +310,7 @@ function openDetail(uid, justCreated = false) {
       ${c.status === 'pago' ? '<button class="button button-secondary" data-act="aguardando">Voltar para aguardando</button>' : ''}
       ${c.status === 'cancelado' ? '<button class="button button-secondary" data-act="aguardando">Reabrir pedido</button>' : ''}
       <button class="button button-secondary" data-act="edit">Editar</button>
+      ${links.some(k => PRODUCTS[k].templates) ? '<button class="button button-secondary" data-act="custom">Fotos e textos</button>' : ''}
       <button class="button button-secondary" data-act="password">Redefinir senha</button>
       <span class="spacer"></span>
       ${c.status !== 'cancelado' ? '<button class="button button-secondary" data-act="cancelado">Cancelar pedido</button>' : ''}
@@ -321,9 +323,164 @@ function openDetail(uid, justCreated = false) {
     if (act === 'pix') openPix(uid);
     if (['pago', 'aguardando', 'cancelado'].includes(act)) setStatus(uid, act);
     if (act === 'edit') openClientForm(uid);
+    if (act === 'custom') openCustomize(uid);
     if (act === 'password' && confirm('Gerar uma nova senha para este cliente? A senha atual deixará de funcionar.')) resetPassword(uid);
     if (act === 'delete') removeClient(uid);
   }));
+}
+
+/* ---------- Fotos e textos das páginas ---------- */
+// Reduz a foto no navegador para caber num documento do Firestore (limite de 1 MB).
+// PNG/WebP com fundo transparente continua transparente e vira figurinha nas páginas.
+async function compressPhoto(file, max) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  let cutout = false;
+  if (/png|webp|gif/.test(file.type)) {
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < pixels.length; i += 4 * 9) if (pixels[i] < 245) { cutout = true; break; }
+  }
+  const type = cutout ? 'image/webp' : 'image/jpeg';
+  let quality = .86, data = canvas.toDataURL(type, quality);
+  if (cutout && !data.startsWith('data:image/webp')) data = canvas.toDataURL('image/png');
+  while (data.length > 900000 && quality > .45) { quality -= .1; data = canvas.toDataURL(type, quality); }
+  if (data.length > 1000000) throw Object.assign(new Error('foto grande'), { userMessage: 'A foto ficou grande demais. Tente uma imagem menor.' });
+  return { data, cutout };
+}
+
+function openCustomize(uid, tab = 'fotos') {
+  const c = clients.find(x => x.uid === uid);
+  if (!c) return;
+  const saved = c.custom || {};
+  const has = event => Object.keys(c.products || {}).some(k => PRODUCTS[k]?.templates && PRODUCTS[k].event === event);
+  const groups = CUSTOM_GROUPS.filter(g => g.title.startsWith('Site') ? has('casamento') : g.title.startsWith('Chá') ? has('cha') : true);
+  const listRow = (f, row = {}) => `<div class="custom-row">${f.columns.map(([key, label, ph]) => `<input data-col="${key}" aria-label="${esc(label)}" placeholder="${esc(ph)}" value="${esc(row[key] || '')}">`).join('')}<button type="button" class="icon-button" data-remove-row aria-label="Remover linha">×</button></div>`;
+  const colorRow = value => `<div class="custom-color"><input type="color" value="${esc(value)}" aria-label="Cor"><button type="button" class="icon-button" data-remove-row aria-label="Remover cor">×</button></div>`;
+  const fieldHtml = f => {
+    const value = saved[f.key];
+    if (f.type === 'list') return `<div class="field full" data-key="${f.key}" data-type="list"><label>${esc(f.label)}</label><div class="custom-list">${(Array.isArray(value) ? value : f.default).map(row => listRow(f, row)).join('')}</div><button type="button" class="button button-secondary button-sm" data-add-row>Adicionar linha</button></div>`;
+    if (f.type === 'colors') return `<div class="field full" data-key="${f.key}" data-type="colors"><label>${esc(f.label)}</label><div class="custom-colors">${(Array.isArray(value) ? value : f.default).map(colorRow).join('')}<button type="button" class="button button-secondary button-sm" data-add-color>+ Cor</button></div></div>`;
+    const input = f.type === 'textarea' ? `<textarea id="c-${f.key}" rows="3" placeholder="${esc(f.default)}">${esc(value || '')}</textarea>` : `<input id="c-${f.key}" value="${esc(value || '')}" placeholder="${esc(f.default)}">`;
+    return `<div class="field ${f.type === 'textarea' ? 'full' : ''}" data-key="${f.key}" data-type="text"><label for="c-${f.key}">${esc(f.label)}</label>${input}${f.hint ? `<span class="field-hint">${esc(f.hint)}</span>` : ''}</div>`;
+  };
+  const modal = openModal(`<div class="modal-pad">${modalHead('PERSONALIZAR', c.couple)}
+    <div class="custom-tabs" role="tablist"><button type="button" role="tab" data-tab="fotos" aria-selected="${tab === 'fotos'}">Fotos</button><button type="button" role="tab" data-tab="textos" aria-selected="${tab === 'textos'}">Textos</button></div>
+    <section data-panel="fotos" ${tab === 'fotos' ? '' : 'hidden'}>
+      <p class="field-hint">As fotos aparecem no convite, na lista e no site. Para virar figurinha com contorno branco, envie o rosto em PNG sem fundo (dá para tirar o fundo em sites como remove.bg).</p>
+      <div class="photo-grid" id="photo-grid"><p class="muted-cell">Carregando fotos...</p></div>
+      <div class="modal-actions"><button type="button" class="button button-quiet" data-back>Voltar</button></div>
+    </section>
+    <form data-panel="textos" id="custom-form" ${tab === 'textos' ? '' : 'hidden'}>
+      <p class="field-hint">Campos em branco usam o texto padrão (aparece apagado dentro do campo). Apague todas as linhas de uma lista para esconder aquela parte.</p>
+      ${groups.map(g => `<p class="form-section">${esc(g.title)}${g.hint ? `<small>${esc(g.hint)}</small>` : ''}</p><div class="modal-fields">${g.fields.map(fieldHtml).join('')}</div>`).join('')}
+      <div class="modal-actions"><button type="button" class="button button-quiet" data-back>Voltar</button><button type="submit" class="button button-primary">Salvar textos</button></div>
+    </form></div>`);
+  modal.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    modal.querySelectorAll('[data-tab]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+    modal.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== b.dataset.tab; });
+  }));
+  modal.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', () => openDetail(uid)));
+
+  // Textos
+  const form = $('#custom-form', modal);
+  form.addEventListener('click', e => {
+    if (e.target.closest('[data-remove-row]')) e.target.closest('.custom-row, .custom-color').remove();
+    const add = e.target.closest('[data-add-row]');
+    if (add) {
+      const f = groups.flatMap(g => g.fields).find(x => x.key === add.closest('[data-key]').dataset.key);
+      add.previousElementSibling.insertAdjacentHTML('beforeend', listRow(f));
+      add.previousElementSibling.lastElementChild.querySelector('input').focus();
+    }
+    const color = e.target.closest('[data-add-color]');
+    if (color) color.insertAdjacentHTML('beforebegin', colorRow('#e8d5b5'));
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const custom = { ...saved };
+    form.querySelectorAll('[data-key]').forEach(box => {
+      const key = box.dataset.key;
+      if (box.dataset.type === 'text') custom[key] = box.querySelector('input, textarea').value.trim();
+      if (box.dataset.type === 'colors') custom[key] = [...box.querySelectorAll('input[type="color"]')].map(i => i.value);
+      if (box.dataset.type === 'list') custom[key] = [...box.querySelectorAll('.custom-row')].map(row => Object.fromEntries([...row.querySelectorAll('[data-col]')].map(i => [i.dataset.col, i.value.trim()]))).filter(row => Object.values(row).some(Boolean));
+    });
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true; button.textContent = 'Salvando...';
+    try {
+      const { createdAt, ...rest } = c;
+      await saveClient({ ...rest, custom });
+      c.custom = custom;
+      notify('Textos salvos. Já aparecem nas páginas.');
+    } catch (e) { console.error(e); notify('Não foi possível salvar. Confira as regras do Firestore.'); }
+    finally { button.disabled = false; button.textContent = 'Salvar textos'; }
+  });
+
+  // Fotos
+  const grid = $('#photo-grid', modal);
+  const photosRef = collection(db, 'sites', c.slug, 'fotos');
+  let photos = {};
+  const renderPhotos = () => {
+    grid.innerHTML = PHOTO_SLOTS.map(slot => {
+      const photo = photos[slot.id];
+      return `<div class="photo-slot ${photo ? 'has-photo' : ''}" data-slot="${slot.id}">
+        <div class="photo-preview ${slot.cutout ? 'is-cutout' : ''}">${photo ? `<img src="${esc(photo.data)}" alt="">` : '<span>Sem foto</span>'}</div>
+        <div class="photo-info"><strong>${esc(slot.label)}</strong>${slot.hint ? `<small>${esc(slot.hint)}</small>` : ''}
+          ${slot.caption ? `<input data-caption placeholder="Legenda (ex.: Comida boa)" value="${esc(photo?.caption || '')}" ${photo ? '' : 'disabled'}>` : ''}
+          <div class="row-buttons"><label class="button button-secondary button-sm">${photo ? 'Trocar' : 'Enviar foto'}<input type="file" accept="image/*" hidden></label>${photo ? '<button type="button" class="button button-danger-ghost button-sm" data-remove-photo>Remover</button>' : ''}</div>
+        </div></div>`;
+    }).join('');
+  };
+  getDocs(photosRef).then(snap => { photos = Object.fromEntries(snap.docs.map(d => [d.id, d.data()])); renderPhotos(); })
+    .catch(e => { console.error(e); grid.innerHTML = '<div class="pix-warning">Não foi possível ler as fotos. Publique as regras novas de firestore.rules no Firebase Console.</div>'; });
+  grid.addEventListener('change', async e => {
+    const box = e.target.closest('[data-slot]'), slot = PHOTO_SLOTS.find(s => s.id === box?.dataset.slot);
+    if (!slot) return;
+    if (e.target.matches('input[type="file"]') && e.target.files[0]) {
+      box.classList.add('is-busy');
+      try {
+        const { data, cutout } = await compressPhoto(e.target.files[0], slot.max);
+        const photo = { data, cutout, caption: photos[slot.id]?.caption || '', updatedAt: serverTimestamp() };
+        await setDoc(doc(photosRef, slot.id), photo);
+        photos[slot.id] = photo;
+        notify(cutout ? 'Foto salva como figurinha (fundo transparente).' : 'Foto salva.');
+      } catch (err) { console.error(err); notify(err.userMessage || 'Não foi possível salvar a foto. Confira as regras do Firestore.'); }
+      renderPhotos();
+    }
+    if (e.target.matches('[data-caption]') && photos[slot.id]) {
+      try { await setDoc(doc(photosRef, slot.id), { caption: e.target.value.trim() }, { merge: true }); photos[slot.id].caption = e.target.value.trim(); notify('Legenda salva.'); }
+      catch (err) { console.error(err); notify('Não foi possível salvar a legenda.'); }
+    }
+  });
+  grid.addEventListener('click', async e => {
+    if (!e.target.closest('[data-remove-photo]')) return;
+    const id = e.target.closest('[data-slot]').dataset.slot;
+    if (!confirm('Remover esta foto?')) return;
+    try { await deleteDoc(doc(photosRef, id)); delete photos[id]; renderPhotos(); notify('Foto removida.'); }
+    catch (err) { console.error(err); notify('Não foi possível remover a foto.'); }
+  });
+}
+
+/* ---------- Visualizar templates ---------- */
+// Prévia de cada modelo com o casal de exemplo de lib/demo.js (nada é gravado no Firebase).
+const TEMPLATE_PAGES = [['convite', 'Convite do chá'], ['lista', 'Lista de presentes'], ['site', 'Site de casamento']];
+function openTemplates(page = 'convite', model = 1, photos = true) {
+  const url = `${page}.html?c=demo&m=${model}${photos ? '' : '&fotos=0'}`;
+  const tabs = (items, attr, current) => `<div class="custom-tabs" role="tablist">${items.map(([value, label]) => `<button type="button" role="tab" data-${attr}="${value}" aria-selected="${String(value) === String(current)}">${esc(label)}</button>`).join('')}</div>`;
+  const modal = openModal(`<div class="modal-pad">${modalHead('TEMPLATES', 'Visualizar modelos')}
+    <div class="tpl-controls">
+      ${tabs(TEMPLATE_PAGES, 'tpl-page', page)}
+      ${tabs(Object.entries(TEMPLATES).map(([n, m]) => [n, m.name]), 'tpl-model', model)}
+      <label class="tpl-toggle"><input type="checkbox" data-tpl-photos ${photos ? 'checked' : ''}> Com fotos e textos de exemplo</label>
+    </div>
+    <p class="field-hint">${esc(TEMPLATES[model].description)}. Casal de exemplo: confirmações e reservas feitas aqui não são gravadas.</p>
+    <div class="tpl-stage"><div class="tpl-phone"><iframe src="${esc(url)}" title="Prévia: ${esc(TEMPLATES[model].name)}"></iframe></div></div>
+    <div class="modal-actions"><a class="button button-secondary" href="${esc(url)}" target="_blank" rel="noopener">Abrir em nova aba</a><button type="button" class="button button-primary" data-close>Fechar</button></div></div>`);
+  modal.querySelectorAll('[data-tpl-page]').forEach(b => b.addEventListener('click', () => openTemplates(b.dataset.tplPage, model, photos)));
+  modal.querySelectorAll('[data-tpl-model]').forEach(b => b.addEventListener('click', () => openTemplates(page, Number(b.dataset.tplModel), photos)));
+  modal.querySelector('[data-tpl-photos]').addEventListener('change', e => openTemplates(page, model, e.target.checked));
 }
 
 /* ---------- Pix ---------- */
@@ -382,6 +539,7 @@ $('#auth-form').addEventListener('submit', async event => {
 });
 $('#sign-out').addEventListener('click', () => signOut(auth));
 $('#open-settings').addEventListener('click', openSettings);
+$('#open-templates').addEventListener('click', () => openTemplates());
 
 onAuthStateChanged(auth, async user => {
   stopClients?.(); stopClients = null;

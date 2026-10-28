@@ -1,60 +1,49 @@
 import { loadProductPage, eventInfo, watchReservas, reserveGift, renderUnavailable, mapsUrl, esc } from './lib/site.js';
 import { dateLong } from './lib/catalog.js';
 import { GIFTS, GIFT_CATEGORIES } from './lib/gifts.js';
-import { ambient, confetti, splitText, reveal, drawSvg, tilt, magnetic, parallax, buzz, reducedMotion } from './lib/fx.js';
+import { custom, customList } from './lib/content.js';
+import { doodle, applyDoodlePattern, tornEdge, cuttingBoard, sprig, appButtons, sticker, roundPhoto, wavyPhoto, polaroid, coverPhoto, waveClipDefs, bill, seal, initialsOf, splitCouple, paletteHtml, pixHtml, bindPixCopy } from './lib/decor.js';
+import { ambient, confetti, splitText, reveal, tilt, magnetic, scrollProgress, buzz, reducedMotion } from './lib/fx.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const normalize = value => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-const wait = ms => new Promise(resolve => setTimeout(resolve, reducedMotion ? 0 : ms));
 const EASE = 'cubic-bezier(.2,.8,.2,1)';
-
-// Ícones por categoria. As partes com classe a-* ganham microanimação no hover.
-const categoryIcons = {
-  'Cozinha': '<path d="M4 11h13v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M3 11h15M17 13h4"/><g class="a-steam"><path d="M8.5 3.5c-1 1.3 1 2.2 0 4"/><path d="M12.5 3.5c-1 1.3 1 2.2 0 4"/></g>',
-  'Utensílios': '<g class="a-wiggle-l"><path d="M7 3v7a2 2 0 0 0 2 2v9M5 3v5M9 3v5"/></g><g class="a-wiggle-r"><path d="M16 21V12c-2-1-2.5-3.5-2.5-5.5S14.5 3 16 3s2.5 1.5 2.5 3.5S18 11 16 12"/></g>',
-  'Mesa posta': '<g class="a-spin"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="3"/><path d="M8.6 9.4a4.4 4.4 0 0 1 2.4-2"/></g><g class="a-clink-l"><path d="M3 4v6a1 1 0 0 0 1 1v9"/></g><g class="a-clink-r"><path d="M21 4v16M21 4c-1.5 0-2.5 2-2.5 5s1 4 2.5 4"/></g>',
-  'Eletroportáteis': '<g class="a-shake"><path d="M8 3h8l-1 10H9z"/><path d="M7 13h10l1 4H6zM6 17h12v4H6zM16 6h3v4h-2.6"/><path class="a-swirl" d="M10.4 8.6c1-.9 2.2-.9 3.2 0"/></g>',
-  'Cama & banho': '<path d="M3 18V8M21 18v-5a3 3 0 0 0-3-3H10v5M3 15h18"/><g class="a-bob"><circle cx="6.5" cy="11.5" r="1.8"/></g><path class="a-z" d="M15 3.5h3l-3 3h3"/>',
-  'Organização & limpeza': '<path d="M4 9h16l-1.5 11h-13z"/><path d="M9 13v4M12 13v4M15 13v4"/><g class="a-swing"><path d="M8 9 10 4M16 9l-2-5"/></g><path class="a-sparkle" d="M20 2.5v3M18.5 4h3"/>',
+const formatTime = time => {
+  if (!time) return '';
+  const [h, m] = time.split(':');
+  return `${Number(h)}h${m && m !== '00' ? m : ''}`;
 };
-const icon = category => `<svg class="gift-icon" viewBox="0 0 24 24" aria-hidden="true">${categoryIcons[category] || categoryIcons['Cozinha']}</svg>`;
-
-function flower(cx, cy, r, base = 0) {
-  const petals = [0, 72, 144, 216, 288].map((a, i) => {
-    const rad = a * Math.PI / 180, px = (cx + Math.cos(rad) * r * .55).toFixed(1), py = (cy + Math.sin(rad) * r * .55).toFixed(1);
-    return `<g transform="rotate(${a} ${px} ${py})"><ellipse class="petal" style="--d:${base + i * 70}ms" cx="${px}" cy="${py}" rx="${(r * .5).toFixed(1)}" ry="${(r * .34).toFixed(1)}" fill="currentColor" fill-opacity=".12"/></g>`;
-  }).join('');
-  return `${petals}<circle class="petal" style="--d:${base + 380}ms" cx="${cx}" cy="${cy}" r="${(r * .22).toFixed(1)}" fill="currentColor" fill-opacity=".4"/>`;
-}
-
-// Folha fechada (sem atributo transform no próprio path para o drawSvg poder animá-la).
-const leaf = (x, y, angle, size = 1) => `<g transform="translate(${x} ${y}) rotate(${angle}) scale(${size})"><path d="M0 0c8-11 23-13 31-8-6 10-21 13-31 8z" fill="currentColor" fill-opacity=".16"/></g>`;
-
-const ornamentsFor = model => {
-  if (model === 1) {
-    const vine = `<svg class="orn orn-1" viewBox="0 0 320 60" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M20 30h110M190 30h110"/><path d="M160 18c-6 6-6 18 0 24 6-6 6-18 0-24z" fill="currentColor" fill-opacity=".2"/>${[0, 1, 2, 3].map(i => `<path d="M${125 - i * 26} 30c-6-10-16-12-22-10 4 7 12 11 22 10z" fill="currentColor" fill-opacity=".14"/><path d="M${125 - i * 26} 30c-6 10-16 12-22 10 4-7 12-11 22-10z" fill="currentColor" fill-opacity=".14"/><path d="M${195 + i * 26} 30c6-10 16-12 22-10-4 7-12 11-22 10z" fill="currentColor" fill-opacity=".14"/><path d="M${195 + i * 26} 30c6 10 16 12 22 10-4-7-12-11-22-10z" fill="currentColor" fill-opacity=".14"/>`).join('')}</g></svg>`;
-    const branch = side => `<div class="branch-wrap branch-${side}" data-speed="-0.12" aria-hidden="true"><svg class="orn-branch" viewBox="0 0 120 280"><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M64 278C60 214 70 160 56 108S40 34 66 4"/>${[[60, 240, -150, 1], [62, 210, -30, .9], [62, 172, -160, 1.05], [58, 140, -20, .95], [54, 108, -155, .9], [50, 80, -35, .85], [54, 50, -150, .8], [60, 26, -40, .7]].map(l => leaf(...l)).join('')}</g></svg></div>`;
-    return `${vine}${branch('left')}${branch('right')}`;
-  }
-  if (model === 2) {
-    const corner = side => `<div class="orn-wrap orn-wrap-${side}" data-speed="-0.08" aria-hidden="true"><svg class="orn-2 bloom" viewBox="0 0 160 160"><g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path class="stem" d="M70 70c20 18 34 38 40 70M64 76c-10 20-30 30-56 30M80 50c18-6 40-2 62 12"/>${flower(52, 52, 20, 500)}${flower(104, 28, 12, 800)}${flower(30, 108, 13, 950)}</g></svg></div>`;
-    return `${corner('left')}${corner('right')}`;
-  }
-  return '';
+const dateParts = iso => {
+  if (!iso) return null;
+  const d = new Date(`${iso}T12:00:00`);
+  return { day: d.getDate(), month: d.toLocaleDateString('pt-BR', { month: 'long' }), monthShort: d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''), weekday: d.toLocaleDateString('pt-BR', { weekday: 'long' }).split('-')[0], year: d.getFullYear() };
 };
 
-const decoCorner = pos => `<svg class="deco-corner deco-${pos}" viewBox="0 0 80 80" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="square"><path d="M2 80V22L22 2H80" stroke-width="1.4"/><path d="M10 80V26L26 10H80" stroke-width=".8"/><path d="M18 80V30L30 18H80" stroke-width=".5" opacity=".6"/><path d="M34 34l5-5 5 5-5 5z" fill="currentColor" fill-opacity=".9"/></g></svg>`;
-const decoFan = () => {
-  const rays = Array.from({ length: 13 }, (_, i) => { const a = Math.PI * (i / 12), x = 80 - Math.cos(a) * 70, y = 78 - Math.sin(a) * 70; return `<path d="M80 78L${x.toFixed(1)} ${y.toFixed(1)}"/>`; }).join('');
-  return `<svg class="deco-fan" viewBox="0 0 160 82" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width=".9">${rays}<path d="M10 78a70 70 0 0 1 140 0"/><path d="M34 78a46 46 0 0 1 92 0"/><path d="M56 78a24 24 0 0 1 48 0" fill="currentColor" fill-opacity=".18"/></g></svg>`;
+/* Desenhos dos presentes ----------------------------------------------------- */
+// Traços extras no mesmo estilo de lib/decor.js (viewBox 64x64).
+const EXTRA_ART = {
+  frigideira: '<path d="M16 22c-2-3 2-5 0-8M26 22c-2-3 2-5 0-8"/><path d="M4 28h38v3c0 7-6 12-13 12H17C10 43 4 38 4 31z"/><path d="M42 31h14a3 3 0 0 1 0 6H44"/>',
+  cama: '<path d="M8 52V14M56 52V34M8 44h48M8 36h48"/><path d="M13 36v-5a4 4 0 0 1 4-4h11a4 4 0 0 1 4 4v5"/><path d="M36 36v-4a5 5 0 0 1 5-5h9a6 6 0 0 1 6 6"/>',
+  toalha: '<rect x="10" y="42" width="44" height="12" rx="3"/><rect x="14" y="30" width="36" height="12" rx="3"/><rect x="18" y="18" width="28" height="12" rx="3"/><path d="M24 24h16M20 36h24M16 48h32"/>',
+  cesto: '<path d="M10 26h44l-5 28a4 4 0 0 1-4 3H19a4 4 0 0 1-4-3z"/><path d="M21 26l6-14M43 26l-6-14"/><path d="M23 34v15M32 34v15M41 34v15"/>',
+  copo: '<path d="M20 10h24l-4 44H24z"/><path d="M22 26h20"/><path d="M28 34v12"/>',
+  liquidificador: '<path d="M22 6h20l-3 32H25z"/><path d="M42 12h6v14h-5"/><path d="M28 16h8"/><path d="M20 38h24l3 10H17z"/><path d="M17 48h30v8H17z"/><path d="M30 52h4"/>',
 };
-function nightSky() {
-  const stars = Array.from({ length: 70 }, () => {
-    const size = Math.random() < .15 ? 3 : Math.random() < .5 ? 2 : 1;
-    return `<i style="left:${(Math.random() * 100).toFixed(2)}%;top:${(Math.random() * 100).toFixed(2)}%;--s:${size}px;--d:${(Math.random() * 6).toFixed(2)}s;--t:${(2.5 + Math.random() * 4).toFixed(2)}s"></i>`;
-  }).join('');
-  return `<div class="night-sky" aria-hidden="true">${stars}<b class="shooting" style="--d:3s;top:12%;left:62%"></b><b class="shooting" style="--d:9s;top:30%;left:85%"></b><b class="shooting" style="--d:15s;top:6%;left:35%"></b></div>`;
-}
+const art = (name, cls = '') => (EXTRA_ART[name] ? `<svg class="doodle ${cls}" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${EXTRA_ART[name]}</svg>` : doodle(name, cls));
+const ART_GROUPS = {
+  panelas: 'jogo-panelas assadeiras refratarios travessas forma-bolo', panela: 'panela-pressao cacarola-ferro escorredor air-fryer', frigideira: 'frigideira',
+  chaleira: 'chaleira chaleira-eletrica', talheres: 'faqueiro facas-chef aparelho-jantar sousplat', rolo: 'tabuas', pote: 'utensilios-silicone potes-hermeticos ralador porta-temperos organizadores',
+  taca: 'tacas abridor-saca', copo: 'jogo-copos jarra', colher: 'medidores', xicara: 'xicaras-cafe cafeteira', coracao: 'toalha-mesa manta-sofa',
+  liquidificador: 'liquidificador processador mixer', batedor: 'batedeira', luva: 'sanduicheira', casa: 'ferro-passar aspirador varal lixeira-inox',
+  cama: 'jogo-cama edredom travesseiros', toalha: 'toalhas-banho panos-prato tapete-banheiro', cesto: 'cesto-roupa kit-limpeza',
+};
+const GIFT_ART = Object.fromEntries(Object.entries(ART_GROUPS).flatMap(([name, ids]) => ids.split(' ').map(id => [id, name])));
+const CATEGORY_ART = { 'Cozinha': 'panela', 'Utensílios': 'pote', 'Mesa posta': 'talheres', 'Eletroportáteis': 'batedor', 'Cama & banho': 'cama', 'Organização & limpeza': 'casa' };
+const giftArt = (gift, cls = '') => art(GIFT_ART[gift.id] || CATEGORY_ART[gift.category] || 'presente', cls);
+
+/* Rostos do modelo Oliva: véu e gravata-borboleta (como no convite). */
+const veil = '<svg class="face-veil" viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M38 22c8-14 36-14 44 0"/><path d="M36 24C14 44 10 84 22 112M84 24c22 20 26 60 14 88"/><path d="M30 60c-4 18-2 36 4 50M90 60c4 18 2 36-4 50"/><path d="M46 14l4-8 6 6 4-9 4 9 6-6 4 8"/></svg>';
+const bowTie = '<svg class="face-bow" viewBox="0 0 64 32" aria-hidden="true"><path d="M30 16 4 4v24zM34 16 60 4v24z" fill="currentColor"/><rect x="27" y="10" width="10" height="12" rx="3" fill="currentColor"/></svg>';
 
 const state = { slug: '', site: null, model: 1, reserved: new Set(), mine: new Set(), category: 'Todos', search: '', current: null, initialized: false, liveSince: 0, fx: null };
 const cells = new Map();
@@ -68,10 +57,6 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400);
 }
 
-function initials(couple) {
-  return String(couple || '').split(/\s*(?:&| e )\s*/i).map(n => n.trim()[0] || '').filter(Boolean).slice(0, 2).join('&').toUpperCase();
-}
-
 function animateNumber(el, from, to, { duration = 1200, pad = 0 } = {}) {
   if (!el) return;
   const format = n => String(Math.round(n)).padStart(pad, '0');
@@ -81,75 +66,160 @@ function animateNumber(el, from, to, { duration = 1200, pad = 0 } = {}) {
   requestAnimationFrame(step);
 }
 
-/* ---------- Estrutura da página ---------- */
-function renderShell() {
-  const { site, slug, model } = state, cha = eventInfo(site, 'lista');
-  const when = [cha.date ? dateLong(cha.date, true) : '', cha.time ? `às ${cha.time}` : ''].filter(Boolean).join(' ');
-  const app = $('#app');
-  const clip = 'up';
-  app.className = `lista model-${model}`; app.removeAttribute('aria-busy');
-  document.title = `Lista de presentes · ${site.couple}`;
-  app.innerHTML = `
-    ${model === 3 ? nightSky() : ''}
-    <header class="hero">${model === 3 ? '<span class="beam beam-l" aria-hidden="true"></span><span class="beam beam-r" aria-hidden="true"></span>' : ''}
-      ${ornamentsFor(model)}
-      <div class="hero-inner">
-        ${model === 2 ? `<svg class="arch-bloom bloom" viewBox="0 0 80 80" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.2">${flower(40, 40, 28, 250)}</g></svg>` : ''}
-        ${model === 3 ? `<div class="deco-frame" aria-hidden="true">${['tl', 'tr', 'bl', 'br'].map(decoCorner).join('')}<span class="deco-edge deco-top"></span><span class="deco-edge deco-bottom"></span><span class="deco-edge deco-left"></span><span class="deco-edge deco-right"></span>${decoFan()}</div><span class="monogram" aria-hidden="true"><svg class="mono-ring" viewBox="0 0 80 80"><g fill="none" stroke="currentColor"><circle cx="40" cy="40" r="38" stroke-width="1"/><circle cx="40" cy="40" r="33" stroke-width=".6"/></g></svg><span class="mono-text gold-text">${esc(initials(site.couple))}</span></span>` : ''}
-        <p class="eyebrow" data-fx="${clip}" style="--fx-d:120ms"><span class="fx-inner">Lista de presentes · Chá de Panela</span></p>
-        <h1 class="couple gold-chars">${esc(site.couple)}</h1>
-        <p class="hero-meta" data-fx="${clip}"><span class="fx-inner">${esc(when || 'Data a definir')}${cha.venue ? `<span class="dot" aria-hidden="true">·</span>${esc(cha.venue)}` : ''}</span></p>
-        <div class="hero-actions" data-fx="up">
-          ${site.products?.convite ? `<a class="btn btn-shine" href="convite.html?c=${encodeURIComponent(slug)}">Ver convite</a>` : ''}
-          ${cha.venue || cha.address ? `<a class="btn btn-ghost" href="${esc(mapsUrl(cha))}" target="_blank" rel="noopener">Como chegar</a>` : ''}
-        </div>
+/* Partes da página ------------------------------------------------------------ */
+
+function heroHtml(ctx) {
+  const { model, photos, n1, n2, ev, t } = ctx;
+  const names = n2 ? `${n1} e ${n2}` : n1;
+  const parts = dateParts(ev.date), time = formatTime(ev.time);
+  const place = [ev.venue, ev.address].filter(Boolean).join(', ');
+  const hasFaces = Boolean(photos.ela || photos.ele);
+  const faces = `${sticker(photos.ela, n1, 'face face-1')}${sticker(photos.ele, n2 || n1, 'face face-2')}`;
+
+  if (model === 1) {
+    return `<header class="hero">
+      <div class="hero-band"><div class="hero-inner">
+        ${doodle('pote', 'hd hd-a')}${doodle('panelas', 'hd hd-b')}${doodle('batedor', 'hd hd-c')}
+        <p class="kicker">Lista de presentes do nosso</p>
+        <h1 class="hero-title display" data-split="char">${esc(t('chaTitle'))}</h1>
+        <p class="hero-names">${esc(names)}</p>
+        <div class="hero-faces">${hasFaces ? faces : doodle('panela', 'hero-pot')}</div>
+      </div>${tornEdge('hero-torn', 11)}</div>
+      <div class="hero-when" data-fx="up">
+        <p class="hero-date display">${esc(ev.date ? dateLong(ev.date) : 'Data a definir')}</p>
+        ${time ? `<p class="hero-time">a partir das ${esc(time)}</p>` : ''}
       </div>
-    </header>
-    <main class="content">
-      <section class="intro" data-fx="${clip}" id="intro">
-        <p>Escolha um presente para ajudar a montar a nossa casa. Ao confirmar, ele fica reservado no seu nome e deixa de aparecer como disponível para os outros convidados.</p>
-        <div class="progress" aria-live="polite">
-          <div class="progress-label"><strong id="taken-count">0</strong> de ${GIFTS.length} presentes já escolhidos</div>
-          <div class="progress-track"><span id="progress-bar"></span></div>
-        </div>
-      </section>
-      <section class="toolbar" aria-label="Filtros da lista" id="toolbar" data-fx="${clip}" style="--fx-d:120ms">
+    </header>`;
+  }
+  if (model === 2) {
+    return `<header class="hero doodle-bg">
+      <div class="hero-faces">${hasFaces ? faces : `<span class="face-fallback">${doodle('presente')}</span>`}</div>
+      <p class="kicker">lista de presentes</p>
+      <h1 class="hero-title display">${esc(t('chaTitle'))}</h1>
+      <p class="hero-names script" data-split="word">${esc(n2 ? `${n1} & ${n2}` : n1)}</p>
+      <div class="arch">
+        ${parts ? `<div class="cal"><span class="cal-side">${esc(parts.weekday)}</span><strong class="cal-day">${parts.day}</strong><span class="cal-side">${esc(parts.month)}</span></div>` : '<p class="cal-tbd">Data a definir</p>'}
+        ${time ? `<p class="cal-time">às ${esc(time)}</p>` : ''}
+      </div>
+    </header>`;
+  }
+  if (model === 3) {
+    return `<header class="hero">
+      ${coverPhoto(photos.capa, `Foto de ${names}`, 'hero-cover') || `<div class="hero-sprigs">${sprig('sp-l')}${sprig('sp-r')}</div>`}
+      <div class="hero-body">
+        <p class="monogram display">${esc(initialsOf(ctx.couple))}</p>
+        <h1 class="hero-names script" data-split="word">${esc(n1)}${n2 ? ` <span class="amp">&</span> ${esc(n2)}` : ''}</h1>
+        <p class="hero-invite display">Lista de presentes do nosso ${esc(t('chaTitle').toLowerCase())}</p>
+        ${parts ? `<div class="date-block"><div class="date-row"><span class="display">${esc(parts.weekday)}</span><strong class="display">${parts.day}</strong><span class="display">${esc(parts.month)}</span></div><span class="date-year display">${time ? `${parts.year} · às ${esc(time)}` : parts.year}</span></div>` : '<p class="date-tbd display">Data a definir</p>'}
+      </div>
+      ${sprig('hero-sprig hs-a')}${sprig('hero-sprig hs-b')}
+    </header>`;
+  }
+  return `<header class="hero"><div class="hero-inner">
+    ${doodle('pote', 'hd hd-a')}${doodle('panelas', 'hd hd-b')}
+    <h1 class="title-stack"><span class="title-pre script">a lista do nosso</span><span class="title-big display">${esc(t('chaTitle'))}</span><span class="title-names script" data-split="word">${esc(names)}</span></h1>
+    <div class="hero-faces">${hasFaces ? `<span class="face-wrap fw-1">${photos.ela ? veil : ''}${sticker(photos.ela, n1, 'face')}</span><span class="face-wrap fw-2">${sticker(photos.ele, n2 || n1, 'face')}${photos.ele ? bowTie : ''}</span>` : doodle('panela', 'hero-pot')}</div>
+    ${parts ? cuttingBoard(`${parts.day} de ${parts.monthShort}`, time ? `às ${time}` : '') : '<p class="hero-address">Data a definir</p>'}
+    ${place ? `<p class="hero-address">${esc(place)}</p>` : ''}
+    <div class="utensil-row">${['batedor', 'xicara', 'rolo', 'colher', 'chaleira', 'talheres', 'luva'].map(n => doodle(n)).join('')}</div>
+  </div></header>`;
+}
+
+function buttonsHtml(ctx) {
+  const { ev, site, slug, model } = ctx;
+  const items = [
+    { icon: 'presente', label: 'Escolher presente', href: '#presentes' },
+    ...(site.products?.convite ? [{ icon: 'agenda', label: 'Ver o convite', href: `convite.html?c=${encodeURIComponent(slug)}` }] : []),
+    ...(ev.venue || ev.address ? [{ icon: 'local', label: 'Como chegar', href: mapsUrl(ev), external: true }] : []),
+    ...(ctx.pixKey ? [{ icon: 'pix', label: 'Contribuir via Pix', href: '#pix' }] : []),
+  ];
+  const head = model === 3 ? '<p class="block-kicker display">Clique nos botões</p><p class="block-script script">para interagir</p>' : model === 2 ? '<p class="block-kicker">Acesse as informações abaixo</p>' : '';
+  return `<section class="block block-buttons" data-fx="up"><div class="buttons-card">${head}${appButtons(items)}</div></section>`;
+}
+
+function stepsHtml(ctx) {
+  const { model, photos, couple } = ctx;
+  const palette = paletteHtml(ctx.palette, custom(ctx.site, 'paletteNote'));
+  const steps = ['Escolha um presente na nossa lista', 'Toque nele e coloque o seu nome', 'Compre onde preferir', 'Leve no dia do chá ou mande entregar'];
+  const photo = model === 1 ? roundPhoto(photos.capa, `Foto de ${couple}`, 'steps-photo')
+    : model === 2 ? polaroid(photos.capa, '', 'steps-photo', -4)
+      : model === 4 ? wavyPhoto(photos.capa, `Foto de ${couple}`, 'steps-photo') : '';
+  return `<section class="block block-steps" id="como"><div class="wrap">
+    ${photo ? `<div class="steps-media" data-fx="up">${photo}</div>` : doodle('pote', 'steps-art')}
+    <h2 class="block-title display" data-fx="up">Como fazer parte?</h2>
+    <p class="block-text" data-fx="up">${esc(custom(ctx.site, 'listaIntro'))}</p>
+    <ol class="steps" data-fx-stagger="up">${steps.map((s, i) => `<li><span class="step-n">${String(i + 1).padStart(2, '0')}</span><span>${s}</span></li>`).join('')}</ol>
+    <a class="btn btn-shine steps-btn" data-fx="up" href="#presentes">Ver a lista de presentes</a>
+    ${palette ? `<div class="steps-palette" data-fx="up"><h3 class="palette-title display">Paleta de cores</h3>${palette}</div>` : ''}
+  </div></section>`;
+}
+
+function giftsHtml(ctx) {
+  const head = ctx.model === 3 ? '<p class="block-script script">com carinho</p>' : ctx.model === 1 ? `${doodle('presente', 'gifts-art')}` : '';
+  return `<section class="block block-gifts" id="presentes" aria-labelledby="gifts-title">
+    <div class="gifts-head" data-fx="up">
+      ${head}
+      <h2 class="block-title display" id="gifts-title">Escolha o seu presente</h2>
+      <p class="block-text">Toque em <strong>Quero presentear</strong> e o presente fica reservado no seu nome.</p>
+    </div>
+    <div class="wrap-wide">
+      <div class="progress" id="progress-box" aria-live="polite" data-fx="up">
+        <div class="progress-label"><strong id="taken-count">0</strong> de ${GIFTS.length} presentes já escolhidos</div>
+        <div class="progress-track"><span id="progress-bar"></span></div>
+      </div>
+      <div class="toolbar" role="search" aria-label="Filtros da lista" id="toolbar">
         <div class="chips" role="group" aria-label="Categorias" id="chips"></div>
         <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="sr-only">Buscar presente</span><input id="search" type="search" placeholder="Buscar presente" autocomplete="off" /></label>
-      </section>
-      <section class="grid" id="grid" aria-label="Presentes"></section>
+      </div>
+      <div class="grid" id="grid" aria-label="Presentes"></div>
       <p class="empty" id="empty" hidden>Nenhum presente encontrado com essa busca.</p>
-    </main>
-    <footer class="footer" data-fx="up"><span class="footer-couple">${esc(site.couple)}</span><span>Obrigado por fazer parte deste momento ♡</span></footer>
+    </div>
+  </section>`;
+}
+
+function pixSection(ctx) {
+  const html = pixHtml({ key: ctx.pixKey, holder: custom(ctx.site, 'pixHolder'), title: custom(ctx.site, 'pixTitle'), gifts: customList(ctx.site, 'pixGifts') });
+  if (!html) return '';
+  const bills = ctx.model === 1 ? [8, 22, 74, 88].map((x, i) => bill('', `left:${x}%;top:${(i % 2) * 30 + 6}px;animation-delay:${-i * 1.7}s`)).join('') : '';
+  return `<section class="block block-pix" id="pix" data-fx="up">${bills}${html}</section>`;
+}
+
+function footerHtml(ctx) {
+  const { model, site, slug, couple } = ctx;
+  const artHtml = model === 3 ? `<div class="footer-seal">${sprig('fs-l')}${seal(initialsOf(couple), 'footer-wax')}${sprig('fs-r')}</div>` : doodle(model === 2 ? 'panela' : 'pote', 'footer-art');
+  return `<footer class="block block-footer" data-fx="up">
+    <p class="closing display">${esc(custom(site, 'closing'))}</p>
+    ${artHtml}
+    <p class="footer-from"><span class="script">com carinho,</span> <strong>${esc(couple)}</strong></p>
+    ${site.products?.convite ? `<a class="link-button" href="convite.html?c=${encodeURIComponent(slug)}">Ver o convite do chá</a>` : ''}
+  </footer>`;
+}
+
+function renderShell(ctx) {
+  const app = $('#app');
+  app.className = 'lista'; app.removeAttribute('aria-busy');
+  document.title = `Lista de presentes · ${ctx.couple}`;
+  app.innerHTML = `${waveClipDefs()}
+    ${heroHtml(ctx)}
+    <main class="content">${buttonsHtml(ctx)}${stepsHtml(ctx)}${giftsHtml(ctx)}${pixSection(ctx)}</main>
+    ${footerHtml(ctx)}
     <button type="button" class="sticky-count" id="sticky-count" tabindex="-1" aria-hidden="true">
       <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="ring-bg" cx="18" cy="18" r="15"/><circle class="ring" id="sticky-ring" cx="18" cy="18" r="15" pathLength="100"/></svg>
       <span><strong id="sticky-taken">0</strong>/${GIFTS.length}<small>escolhidos</small></span>
     </button>`;
 
-  // Nomes letra a letra (palavra a palavra no Rosé, que usa letra cursiva).
-  const nameDelay = model === 3 ? 900 : 380, nameStagger = model === 1 ? 42 : model === 2 ? 180 : 230;
-  const names = splitText($('.couple'), { by: model === 1 ? 'char' : 'word', delay: nameDelay, stagger: nameStagger });
-  const namesEnd = nameDelay + names.count * nameStagger + 300;
-  $('.hero-meta').style.setProperty('--fx-d', `${namesEnd}ms`);
-  $('.hero-actions').style.setProperty('--fx-d', `${namesEnd + 160}ms`);
-  requestAnimationFrame(() => names.play());
+  // Nome do topo entra letra a letra (palavra a palavra nas fontes cursivas).
+  const split = $('[data-split]');
+  if (split) { const by = split.dataset.split; splitText(split, { by, delay: 250, stagger: by === 'char' ? 45 : 180 }).play(); }
+  requestAnimationFrame(() => app.classList.add('is-ready'));
 
-  if (model === 1) {
-    drawSvg($('.orn-1'), { duration: 1500, stagger: 60, delay: 100 });
-    document.querySelectorAll('.orn-branch').forEach(svg => drawSvg(svg, { duration: 1800, stagger: 110, delay: 300 }));
-  }
-  if (model === 3) {
-    document.querySelectorAll('.deco-corner').forEach(svg => drawSvg(svg, { duration: 1300, stagger: 140, delay: 150 }));
-    drawSvg($('.deco-fan'), { duration: 1400, stagger: 45, delay: 500 });
-    drawSvg($('.mono-ring'), { duration: 1200, stagger: 200, delay: 300 });
-  }
-  requestAnimationFrame(() => app.classList.add('intro-play'));
-
+  bindPixCopy(app, toast);
   renderChips();
   buildGrid();
   reveal(app);
-  parallax(app);
-  document.querySelectorAll('.hero-actions .btn').forEach(btn => magnetic(btn, { strength: .3 }));
+  scrollProgress();
+  app.querySelectorAll('.steps-btn, .block-pix .btn').forEach(btn => magnetic(btn, { strength: .2 }));
+  app.querySelectorAll('.pix-gift').forEach(el => tilt(el, { max: 10, scale: 1.04 }));
 
   let searchTimer;
   $('#search').addEventListener('input', event => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = event.target.value; applyFilter(); }, 140); });
@@ -166,7 +236,7 @@ function renderShell() {
   document.fonts?.ready.then(moveIndicator);
 }
 
-/* ---------- Filtros com indicador deslizante ---------- */
+/* Filtros com indicador deslizante ---------------------------------------------- */
 function renderChips() {
   const all = ['Todos', ...GIFT_CATEGORIES];
   $('#chips').innerHTML = `<span class="chip-indicator" aria-hidden="true"></span>${all.map(category => {
@@ -195,32 +265,30 @@ function moveIndicator() {
   if (chips.scrollWidth > chips.clientWidth) chips.scrollTo({ left: active.offsetLeft - chips.clientWidth / 2 + active.offsetWidth / 2, behavior: reducedMotion ? 'auto' : 'smooth' });
 }
 
-/* ---------- Grade de presentes ---------- */
+/* Grade de presentes -------------------------------------------------------------- */
 function cardFoot(gift) {
   const taken = state.reserved.has(gift.id), mine = state.mine.has(gift.id);
   return taken
     ? `<span class="gift-status">${mine ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Escolhido por você' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>Já escolhido'}</span>`
-    : `<button type="button" class="btn gift-button" data-gift="${esc(gift.id)}">Quero presentear</button>`;
+    : `<button type="button" class="btn gift-button" data-gift="${esc(gift.id)}" aria-label="Quero presentear: ${esc(gift.name)}">Quero presentear</button>`;
 }
 
 function buildGrid() {
-  const grid = $('#grid'), fx = state.model === 1 ? 'up' : state.model === 2 ? 'scale' : 'blur';
+  const grid = $('#grid'), fx = state.model === 2 ? 'scale' : state.model === 3 ? 'blur' : 'up';
   grid.innerHTML = GIFTS.map((gift, index) => `<div class="gift-cell" data-id="${esc(gift.id)}" data-fx="${fx}">
       <article class="gift">
-        <span class="gift-number" aria-hidden="true" data-n="${index + 1}">00</span>
-        <div class="gift-art">${icon(gift.category)}</div>
+        <span class="gift-number" aria-hidden="true">Nº ${String(index + 1).padStart(2, '0')}</span>
+        <div class="gift-art">${giftArt(gift)}</div>
         <p class="gift-category">${esc(gift.category)}</p>
-        <h2 class="gift-name">${esc(gift.name)}</h2>
-        <p class="gift-hint">Sugestão: ${esc(gift.hint)}</p>
+        <h3 class="gift-name">${esc(gift.name)}</h3>
+        <p class="gift-hint"><span class="sr-only">Sugestão de valor: </span>${esc(gift.hint)}</p>
         <div class="gift-foot">${cardFoot(gift)}</div>
         <span class="gift-stamp" aria-hidden="true"></span>
-        <span class="gift-sheen" aria-hidden="true"></span>
       </article>
     </div>`).join('');
   grid.querySelectorAll('.gift-cell').forEach(cell => {
     cells.set(cell.dataset.id, cell);
-    const article = cell.querySelector('.gift');
-    tilt(article, { max: state.model === 3 ? 4 : 7, scale: 1.02 });
+    tilt(cell.querySelector('.gift'), { max: state.model === 3 ? 4 : 7, scale: 1.02 });
     syncCard(cell.dataset.id);
   });
   setColumnIndexes();
@@ -233,21 +301,13 @@ function setColumnIndexes() {
   [...cells.values()].filter(c => !c.hidden).forEach((cell, i) => cell.style.setProperty('--fx-i', i % cols));
 }
 
-// Revela cada card ao entrar na tela; no Minimal, o número conta de 00 até o número do item.
+// Revela cada card ao entrar na tela.
 function observeCells() {
-  const show = cell => {
-    cell.classList.add('fx-in');
-    const number = cell.querySelector('.gift-number');
-    if (state.model === 3 && !number.dataset.done) {
-      number.dataset.done = '1';
-      const delay = Number(cell.style.getPropertyValue('--fx-i') || 0) * 90 + 200;
-      setTimeout(() => animateNumber(number, 0, Number(number.dataset.n), { duration: 700, pad: 2 }), reducedMotion ? 0 : delay);
-    } else number.textContent = String(number.dataset.n).padStart(2, '0');
-  };
+  const show = cell => cell.classList.add('fx-in');
+  state.showCell = show;
   if (reducedMotion || !('IntersectionObserver' in window)) { cells.forEach(show); return; }
   const io = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) { show(entry.target); io.unobserve(entry.target); } }), { threshold: .12, rootMargin: '0px 0px -5% 0px' });
   cells.forEach(cell => io.observe(cell));
-  state.showCell = show;
 }
 
 function matches(gift) {
@@ -296,7 +356,7 @@ function syncCard(id, animate = false) {
   const taken = state.reserved.has(id), mine = state.mine.has(id);
   article.classList.toggle('is-taken', taken);
   article.classList.toggle('is-mine', mine);
-  cell.querySelector('.gift-stamp').textContent = mine ? 'Seu presente ♡' : state.model === 3 ? 'Já escolhido' : 'Escolhido';
+  cell.querySelector('.gift-stamp').textContent = mine ? 'Seu presente ♡' : 'Escolhido';
   cell.querySelector('.gift-foot').innerHTML = cardFoot(gift);
   if (animate && taken && !reducedMotion) {
     article.classList.remove('just-taken'); void article.offsetWidth; article.classList.add('just-taken');
@@ -304,7 +364,7 @@ function syncCard(id, animate = false) {
   }
 }
 
-/* ---------- Progresso e contador fixo ---------- */
+/* Progresso e contador fixo ------------------------------------------------------- */
 let shownTaken = 0;
 function updateProgress() {
   const taken = GIFTS.filter(g => state.reserved.has(g.id)).length, pct = taken / GIFTS.length;
@@ -317,7 +377,7 @@ function updateProgress() {
 }
 
 function watchSticky() {
-  const sticky = $('#sticky-count'), intro = $('#intro');
+  const sticky = $('#sticky-count'), box = $('#progress-box');
   if (!('IntersectionObserver' in window)) return;
   new IntersectionObserver(([entry]) => {
     const visible = !entry.isIntersecting && entry.boundingClientRect.top < 0;
@@ -325,10 +385,10 @@ function watchSticky() {
     sticky.tabIndex = visible ? 0 : -1;
     sticky.setAttribute('aria-hidden', String(!visible));
     sticky.setAttribute('aria-label', `${shownTaken} de ${GIFTS.length} presentes escolhidos. Ir para os filtros`);
-  }).observe(intro);
+  }).observe(box);
 }
 
-/* ---------- Modal de escolha ---------- */
+/* Modal de escolha ---------------------------------------------------------------- */
 function openDialog(giftId, source) {
   const gift = GIFTS.find(g => g.id === giftId);
   if (!gift || state.reserved.has(gift.id)) return;
@@ -336,9 +396,9 @@ function openDialog(giftId, source) {
   const form = $('#gift-form'), dialog = $('#gift-dialog');
   form.innerHTML = `
     <button type="button" class="dialog-close" data-close aria-label="Fechar">×</button>
-    <div class="dialog-art">${icon(gift.category)}</div>
-    <p class="eyebrow">Presentear o casal</p>
-    <h2 id="dialog-title" class="dialog-title">${esc(gift.name)}</h2>
+    <div class="dialog-art">${giftArt(gift)}</div>
+    <p class="dialog-kicker">Presentear o casal</p>
+    <h2 id="dialog-title" class="dialog-title display">${esc(gift.name)}</h2>
     <p class="dialog-hint">Sugestão de valor: ${esc(gift.hint)}</p>
     <label class="field">Seu nome<input name="name" required maxlength="80" autocomplete="name" placeholder="Como o casal conhece você" /></label>
     <label class="field"><span>Recado para o casal <span class="optional">(opcional)</span></span><textarea name="message" maxlength="300" placeholder="Deixe uma mensagem carinhosa"></textarea></label>
@@ -372,18 +432,17 @@ $('#gift-dialog').addEventListener('click', event => {
 });
 $('#gift-dialog').addEventListener('cancel', event => { event.preventDefault(); closeDialog(); });
 
-/* ---------- Celebração ao presentear ---------- */
+/* Celebração ao presentear --------------------------------------------------------- */
 function popShape(model) {
   if (model === 1) return '<path d="M0 0c6-9 18-10 24-6-5 8-16 10-24 6z"/>';
-  if (model === 2) return '<path d="M0 3C-5-4-11 1-6 6L0 11 6 6C11 1 5-4 0 3z"/>';
-  return '<path d="M0-9 2-2 9 0 2 2 0 9-2 2-9 0-2-2z"/>';
+  if (model === 4) return '<path d="M0 3C-5-4-11 1-6 6L0 11 6 6C11 1 5-4 0 3z"/>';
+  return '<path d="M0-10C6-5 6 5 0 10-6 5-6-5 0-10z"/>';
 }
 
 function giftBox(model) {
   const pops = [[-70, -10, 0], [-38, 20, 140], [0, -18, 60], [36, 14, 220], [72, -6, 100], [-14, 30, 300], [20, -28, 380]]
     .map(([x, r, d]) => `<g transform="translate(100 112)"><g class="gb-pop" style="--x:${x}px;--r:${r}deg;--d:${d}ms">${popShape(model)}</g></g>`).join('');
   return `<svg class="giftbox" viewBox="0 0 200 220" aria-hidden="true">
-    <defs><linearGradient id="gb-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b8913f"/><stop offset=".35" stop-color="#f6e3a8"/><stop offset=".6" stop-color="#d4af63"/><stop offset="1" stop-color="#8f6d2c"/></linearGradient></defs>
     <g class="gb-pops">${pops}</g>
     <g class="gb-body"><rect class="gb-box" x="44" y="112" width="112" height="92" rx="6"/><rect class="gb-ribbon" x="92" y="112" width="16" height="92"/></g>
     <g class="gb-lid">
@@ -400,15 +459,15 @@ function celebrate(gift, name) {
   el.innerHTML = `
     <div class="celebrate-inner">
       <div class="gb-stage"><span class="gb-rays" aria-hidden="true"></span><span class="gb-glow" aria-hidden="true"></span>${giftBox(state.model)}</div>
-      <p class="eyebrow c-fade" style="--d:1.5s">Presente reservado</p>
-      <h2 id="celebrate-title" class="celebrate-title gold-chars">Obrigado, ${esc(first)}!</h2>
+      <p class="dialog-kicker c-fade" style="--d:1.5s">Presente reservado</p>
+      <h2 id="celebrate-title" class="celebrate-title display">Obrigado, ${esc(first)}!</h2>
       <p class="celebrate-text c-fade" style="--d:2.1s">O presente <strong>${esc(gift.name)}</strong> está reservado no seu nome. ${esc(state.site.couple)} vão adorar o carinho.</p>
       <button type="button" class="btn btn-shine c-fade" style="--d:2.3s" data-celebrate-close>Voltar para a lista</button>
     </div>`;
   el.hidden = false; $('#app').inert = true; document.documentElement.classList.add('no-scroll');
   splitText($('.celebrate-title'), { by: state.model === 1 ? 'char' : 'word', delay: 1650, stagger: state.model === 1 ? 35 : 160 }).play();
   requestAnimationFrame(() => el.classList.add('play'));
-  setTimeout(() => { confetti($('.giftbox'), state.model, { amount: state.model === 3 ? 220 : 170 }); state.fx?.burst(innerWidth / 2, innerHeight * .4, 30); buzz([18, 40, 26]); }, reducedMotion ? 0 : 1300);
+  setTimeout(() => { confetti($('.giftbox'), state.model, { amount: 170 }); state.fx?.burst(innerWidth / 2, innerHeight * .4, 30); buzz([18, 40, 26]); }, reducedMotion ? 0 : 1300);
   el.querySelector('[data-celebrate-close]').focus({ preventScroll: true });
 }
 
@@ -432,7 +491,7 @@ function closeCelebrate() {
 $('#celebrate').addEventListener('click', event => { if (event.target.closest('[data-celebrate-close]')) closeCelebrate(); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('#celebrate').hidden) closeCelebrate(); });
 
-/* ---------- Reserva ---------- */
+/* Reserva ---------------------------------------------------------------------------- */
 $('#gift-form').addEventListener('submit', async event => {
   event.preventDefault();
   const gift = state.current, form = event.currentTarget;
@@ -459,14 +518,27 @@ $('#gift-form').addEventListener('submit', async event => {
   }
 });
 
-/* ---------- Início ---------- */
+/* Início ------------------------------------------------------------------------------ */
+const DOODLE_INK = { 1: '#8a5530', 2: '#4b5a3a', 3: '#4f5b3e', 4: '#66754a' };
+
 async function start() {
-  const { slug, site, model, error } = await loadProductPage('lista');
-  if (!site) { renderUnavailable(document.body, error); return; }
+  const { slug, site, model, photos, error } = await loadProductPage('lista');
+  const app = $('#app');
+  if (!site) { app.classList.remove('loading'); app.removeAttribute('aria-busy'); renderUnavailable(app, error); return; }
   Object.assign(state, { slug, site, model });
   state.mine = loadMine();
-  state.fx = ambient(model, { density: model === 3 ? 1.1 : .9 });
-  renderShell();
+  const couple = site.couple || 'Os noivos';
+  const [n1, n2] = splitCouple(couple);
+  const ctx = {
+    site, slug, model, photos, couple, n1, n2,
+    ev: eventInfo(site, 'lista'),
+    t: key => custom(site, key),
+    palette: customList(site, 'palette'),
+    pixKey: custom(site, 'pixKey'),
+  };
+  applyDoodlePattern(DOODLE_INK[model], model === 2 ? .09 : .1);
+  state.fx = ambient(model, { density: .5 });
+  renderShell(ctx);
   watchReservas(slug, ids => {
     const changed = new Set([...ids, ...state.reserved].filter(id => ids.has(id) !== state.reserved.has(id)));
     state.reserved = ids;
@@ -481,4 +553,8 @@ async function start() {
   });
 }
 
-start();
+start().catch(error => {
+  console.error(error);
+  const app = $('#app'); app.classList.remove('loading'); app.removeAttribute('aria-busy');
+  renderUnavailable(app, error);
+});
