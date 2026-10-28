@@ -23,8 +23,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Dados do organizador de casamento de cada cliente.
-    match /planners/{uid} { allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid); }
+    // Dados do organizador de casamento de cada cliente e os anexos dos gastos (fotos, PDFs, contratos).
+    match /planners/{uid} {
+      allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      match /anexos/{fileId} { allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid); }
+    }
 
     // Dados públicos usados pelo convite, lista de presentes e site de casamento.
     match /sites/{slug} {

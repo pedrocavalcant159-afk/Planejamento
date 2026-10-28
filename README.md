@@ -57,6 +57,7 @@ Coleções do Firestore:
 - `sites/{link}/reservas`: presentes escolhidos na lista (um por presente).
 - `sites/{link}/fotos`: fotos do casal usadas nas páginas (só o admin envia).
 - `planners/{uid}`: dados do organizador.
+- `planners/{uid}/anexos`: fotos, PDFs e contratos anexados aos gastos do financeiro (cada arquivo de até 8 MB é guardado em partes de 700 KB).
 - `settings/main`: chave Pix e preços.
 
 Observações:

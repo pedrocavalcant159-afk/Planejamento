@@ -270,6 +270,8 @@ async function removeClient(uid) {
       const snap = await getDocs(collection(db, 'sites', client.slug, sub));
       await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
     }
+    const anexos = await getDocs(collection(db, 'planners', uid, 'anexos'));
+    await Promise.all(anexos.docs.map(d => deleteDoc(d.ref)));
     await Promise.all([deleteDoc(doc(db, 'sites', client.slug)), deleteDoc(doc(db, 'accounts', uid)), deleteDoc(doc(db, 'planners', uid)), deleteDoc(doc(db, 'clients', uid))]);
     $('#admin-modal').close();
     notify('Cliente excluído.');
