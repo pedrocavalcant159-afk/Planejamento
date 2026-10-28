@@ -144,7 +144,7 @@ let weekStart = weekOf(todayIso());
 let timelineView = 'semana';
 let showDiscarded = false;
 let vendorTab = 'Todos';
-let askThread = []; // conversa com a cerimonialista virtual (só nesta sessão)
+let askThread = [], askMemory = {}; // conversa com a cerimonialista virtual (só nesta sessão)
 let dayTrack = 'Tudo';
 const contractStatuses = ['Sem contrato', 'Enviado para assinatura', 'Assinado'];
 const tracks = ['Geral', 'Noiva', 'Noivo'];
@@ -175,6 +175,7 @@ const icons = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   check: '<path d="m9 11 3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
@@ -245,12 +246,25 @@ function render() {
       if (!cell.hasAttribute('colspan') && labels[index] !== undefined) cell.dataset.label = labels[index];
     }));
   });
-  bindPageEvents(); updateProgress();
+  bindPageEvents(); updateProgress(); updateNavBadges();
+}
+// Ações das respostas: copiar a mensagem pronta ou levar o cronograma modelo para o Cerimonial.
+function askAction(action, button) {
+  if (!action) return;
+  if (action.type === 'copy') { navigator.clipboard?.writeText(action.text).then(() => notify('Mensagem copiada. É só colar e trocar a data e o link.'), () => notify('Não consegui copiar. Selecione o texto e copie.')); return; }
+  if (action.type === 'import-timeline') {
+    const have = new Set(data.ceremonial.map(c => normalizeKey(c.title)));
+    const rows = action.rows.filter(r => !have.has(normalizeKey(r.title)));
+    if (!rows.length) { notify('Esses horários já estão no Cerimonial.'); return; }
+    rows.forEach(r => data.ceremonial.push({ id: uid('c'), time: r.time, title: r.title, responsible: r.track === 'Geral' ? '' : r.track, status: 'A Fazer', details: 'Modelo da cerimonialista virtual', track: r.track }));
+    save(`${rows.length} ${rows.length === 1 ? 'horário adicionado' : 'horários adicionados'} ao Cerimonial. Ajuste o que precisar.`, false);
+    button.disabled = true; button.textContent = 'Adicionado ao Cerimonial ✓';
+  }
 }
 function askThreadHtml() {
   const chips = list => `<div class="ask-chips">${list.map(q => `<button type="button" class="ask-chip" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
-  const hello = `<div class="ask-msg is-bot"><p>Oi! ♡ Sou a sua cerimonialista virtual. Pode me contar como está se sentindo ou perguntar o que quiser sobre o casamento.</p>${askThread.length ? '' : chips(QUESTIONS)}</div>`;
-  return hello + askThread.map((m, i) => `<div class="ask-msg is-me">${esc(m.question)}</div>${m.reply ? `<div class="ask-msg is-bot"><h3>${esc(m.reply.title)}</h3>${m.reply.intro ? `<p>${esc(m.reply.intro)}</p>` : ''}${m.reply.lines.length ? (m.reply.lines.every(l => /^\d+\. /.test(l)) ? `<ol>${m.reply.lines.map(l => `<li>${esc(l.replace(/^\d+\. /, ''))}</li>`).join('')}</ol>` : `<ul>${m.reply.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`) : ''}${m.reply.go?.page ? `<button type="button" class="text-button" data-ask-go="${esc(m.reply.go.page)}">${esc(m.reply.go.label || 'Abrir')} → ${esc(navLabels[m.reply.go.page] || '')}</button>` : ''}${i === askThread.length - 1 && m.reply.follow?.length ? chips(m.reply.follow) : ''}</div>` : '<div class="ask-msg is-bot is-typing" aria-label="Digitando"><i></i><i></i><i></i></div>'}`).join('');
+  const hello = `<div class="ask-msg is-bot"><p>Oi! ♡ Sou a sua cerimonialista virtual. Me conte em que pé está cada coisa ("tô olhando o fotógrafo", "já fechei o buffet") ou pergunte o que quiser: fornecedores, contrato, cronograma do dia, cortejo, convites, votos...</p>${askThread.length ? '' : chips(QUESTIONS)}</div>`;
+  return hello + askThread.map((m, i) => `<div class="ask-msg is-me">${esc(m.question)}</div>${m.reply ? `<div class="ask-msg is-bot"><h3>${esc(m.reply.title)}</h3>${m.reply.intro ? `<p>${esc(m.reply.intro)}</p>` : ''}${m.reply.lines.length ? (m.reply.lines.every(l => /^\d+\. /.test(l)) ? `<ol>${m.reply.lines.map(l => `<li>${esc(l.replace(/^\d+\. /, ''))}</li>`).join('')}</ol>` : `<ul>${m.reply.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`) : ''}${m.reply.action ? `<button type="button" class="button button-secondary button-sm ask-action" data-ask-action="${i}">${icon(m.reply.action.type === 'copy' ? 'note' : 'calendar')}${esc(m.reply.action.label)}</button>` : ''}${m.reply.go?.page ? `<button type="button" class="text-button" data-ask-go="${esc(m.reply.go.page)}">${esc(m.reply.go.label || 'Abrir')} → ${esc(navLabels[m.reply.go.page] || '')}</button>` : ''}${i === askThread.length - 1 && m.reply.follow?.length ? chips(m.reply.follow) : ''}</div>` : '<div class="ask-msg is-bot is-typing" aria-label="Digitando"><i></i><i></i><i></i></div>'}`).join('');
 }
 function heading(kicker, title, desc, action = '') { return `<div class="page-heading"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${desc}</p></div><div class="heading-actions">${action}</div></div>`; }
 function renderDashboard() {
@@ -270,15 +284,16 @@ function renderDashboard() {
     <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Pergunte à cerimonialista</h2><p class="panel-subtitle">Converse do seu jeito. Eu respondo com os dados do seu casamento</p></div>${askThread.length ? '<button type="button" class="text-button" data-ask-clear>Limpar conversa</button>' : ''}</div><div class="ask-thread" id="ask-thread" aria-live="polite">${askThreadHtml()}</div><form class="ask-form" id="ask-form"><input name="q" placeholder="Escreva do seu jeito: tô perdida, me dá uma dica..." aria-label="Sua pergunta" autocomplete="off"><button class="button button-primary button-sm" type="submit">Enviar</button></form></article>
   </section>
   <section class="notice-card"><div><strong>${next ? 'Próximo passo' : data.tasks.length ? 'Tudo em dia' : 'Vamos começar?'}</strong><p>${next ? `${esc(next.title)} · ${esc(next.date ? shortDate(next.date) : 'Prioridade')}${next.time ? `, ${esc(next.time)}` : ''}` : data.tasks.length ? 'Todas as tarefas do cronograma foram concluídas. Agora é só aproveitar.' : 'Seu organizador está novinho. Adicione a primeira tarefa do cronograma ou cadastre os convidados.'}</p></div>${next ? `<button class="button button-secondary" data-task-done="${next.id}">Marcar como feita</button>` : data.tasks.length ? '' : `<button class="button button-secondary" data-action="add-task">${icon('plus')} Adicionar tarefa</button>`}</section>
-  <section class="stats-grid">${stat('convidados', 'users', 'Confirmados', confirmedGuests(), `de ${totalGuests()} pessoas na lista`)}${stat('financeiro', 'wallet', 'Total pago', money(spent()), `de ${money(planned())} orçados`)}${stat('financeiro', 'clock', 'Saldo a pagar', money(due()), `${paidRatio}% já quitado ou ganho`)}${stat('cronograma', 'check', 'Tarefas', `${doneTasks}/${data.tasks.length}`, `${progress()}% do cronograma`)}${stat('checklist', 'box', 'Itens no local', `${onSite}/${data.supplies.length}`, 'do checklist do que levar')}</section>
+  <section class="stats-grid">${stat('convidados', 'users', 'Confirmados', confirmedGuests(), `de ${totalGuests()} pessoas na lista`)}${stat('financeiro', 'wallet', 'Total pago', money(spent()), `de ${money(planned() - gifted())} a pagar no total`)}${stat('financeiro', 'clock', 'Saldo a pagar', money(due()), `${paidRatio}% já quitado ou ganho`)}${stat('cronograma', 'check', 'Tarefas', `${doneTasks}/${data.tasks.length}`, `${progress()}% do cronograma`)}${stat('checklist', 'box', 'Itens no local', `${onSite}/${data.supplies.length}`, 'do checklist do que levar')}</section>
   <section class="dashboard-grid"><article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Visão do orçamento</h2><p class="panel-subtitle">Quanto já foi pago e para onde vai o dinheiro</p></div><button class="text-button" data-go="financeiro">Ver detalhes →</button></div><div class="budget-total">${money(spent())}</div><div class="budget-meta"><span>do total de ${money(planned())}</span><span>${paidRatio}% pago</span></div><div class="progress-track"><span style="width:${paidRatio}%"></span></div><div class="legend-row"><span><i class="legend-dot"></i>Valor pago</span><span><i class="legend-dot soft"></i>Restante</span></div><div class="category-list" style="margin-top:22px">${groups.length ? groups.map(x => `<div class="category-row"><span class="category-name">${esc(x.c)}</span><span class="category-value">${money(x.sum)}</span><div class="mini-track"><span style="width:${Math.max(3, Math.round(x.sum / planned() * 100))}%"></span></div></div>`).join('') : empty('Adicione seus primeiros gastos.')}</div></article>
   <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Próximas tarefas</h2><p class="panel-subtitle">${pending.length} ${pending.length === 1 ? 'tarefa pendente' : 'tarefas pendentes'}</p></div><button class="text-button" data-go="cronograma">Ver cronograma →</button></div><div class="task-list">${tasks.length ? tasks.map(t => `<label class="task-row"><input class="task-check" type="checkbox" data-task-check="${t.id}"><span class="task-text">${esc(t.title)}</span><span class="task-meta">${esc(t.date ? shortDate(t.date) : 'Prioridade')}${t.time ? ` · ${esc(t.time)}` : ''}</span></label>`).join('') : empty(data.tasks.length ? 'Tudo por aqui concluído!' : 'Nenhuma tarefa ainda.')}</div></article></section>`;
 }
 function weddingProfile() {
-  const w = data.wedding, budget = Number(w.budget || 0), guests = Number(w.guestsExpected || 0), used = planned();
-  const ratio = budget ? Math.min(100, Math.round(used / budget * 100)) : 0;
+  // Já orçado: só o que o casal vai pagar (presentes ganhos ficam de fora).
+  const w = data.wedding, budget = Number(w.budget || 0), guests = Number(w.guestsExpected || 0), gifts = gifted(), used = planned() - gifts;
+  const ratio = budget ? Math.round(used / budget * 100) : 0, over = budget && used > budget;
   return `<section class="card wedding-profile"><div class="profile-info"><p class="eyebrow">NOSSO CASAMENTO</p><h2>Um dia para lembrar</h2><ul>${w.date ? `<li>${icon('calendar')}${dateLabel(w.date)}</li>` : ''}<li>${icon('users')}${guests ? `${guests} convidados previstos` : 'Convidados previstos a definir'}</li><li>${icon('heart')}Estilo ${esc((w.style || 'a definir').toLowerCase())}${w.ceremonyType ? ` · cerimônia ${esc(w.ceremonyType.toLowerCase())}` : ''}</li></ul></div>
-    <div class="profile-boxes"><div class="profile-box"><span>Orçamento máximo</span><strong class="is-accent">${budget ? money(budget) : '—'}</strong></div><div class="profile-box"><span>Por convidado</span><strong>${budget && guests ? money(budget / guests) : '—'}</strong></div><div class="profile-box profile-used"><span>Já orçado</span><strong class="${budget && used > budget ? 'is-over' : ''}">${money(used)}</strong>${budget ? `<div class="mini-track"><span style="width:${ratio}%"></span></div><small>${ratio}% do orçamento máximo</small>` : ''}</div></div>
+    <div class="profile-boxes"><div class="profile-box"><span>Orçamento máximo</span><strong class="is-accent">${budget ? money(budget) : '—'}</strong></div><div class="profile-box"><span>Por convidado</span><strong>${budget && guests ? money(budget / guests) : '—'}</strong></div><div class="profile-box profile-used"><span>Já orçado</span><strong class="${over ? 'is-over' : ''}">${money(used)}</strong>${budget ? `<div class="mini-track ${over ? 'is-over' : ''}"><span style="width:${Math.min(100, ratio)}%"></span></div><small>${over ? `${money(used - budget)} acima do orçamento máximo (${ratio}%)` : `${ratio}% do orçamento máximo`}</small>` : ''}${gifts ? `<small class="profile-gifts">Sem contar ${money(gifts)} em presentes ganhos</small>` : ''}</div></div>
     ${budget && guests ? '<p class="profile-note">O valor por convidado é uma referência para o casamento inteiro, não só para a comida.</p>' : `<button type="button" class="button button-secondary button-sm profile-edit" data-action="edit-wedding">${icon('settings')}Definir orçamento e convidados</button>`}</section>`;
 }
 function renderVendors() {
@@ -406,7 +421,7 @@ function renderFinance() {
   const totals = rows => { const paid = rows.reduce((a, e) => a + (isGift(e) ? 0 : Number(e.paid || 0)), 0), gift = rows.filter(isGift).reduce((a, e) => a + Number(e.planned || 0), 0), left = rows.reduce((a, e) => a + dueOf(e), 0); return `<div class="category-totals"><span class="category-total">${money(paid)} pagos</span>${gift > 0 ? `<span class="category-total category-gift">${money(gift)} em presentes</span>` : ''}${left > 0 ? `<span class="category-total category-due">${money(left)} faltam</span>` : ''}</div>`; };
   const row = e => { const files = (e.files || []).length + (e.links || []).length; return `<tr><td><span class="person-name">${esc(e.description)}</span>${e.supplier ? `<span class="person-sub">Fornecedor: ${esc(e.supplier)}</span>` : ''}${(e.installments || []).length ? (() => { const list = e.installments, next = list.filter(x => !x.paid).sort((a, b) => (a.due || '').localeCompare(b.due || ''))[0]; return `<span class="person-sub inst-sub ${next?.due && next.due < todayIso() ? 'is-late' : ''}">Parcelas: ${list.filter(x => x.paid).length}/${list.length} pagas${next ? ` · próxima ${next.due ? esc(shortDate(next.due)) : 'sem data'} (${money(next.amount)})${next.due && next.due < todayIso() ? ' · vencida' : ''}` : ''}</span>`; })() : ''}${e.notes ? `<span class="person-sub">${esc(e.notes)}</span>` : ''}</td><td>${money(e.planned)}</td><td>${money(e.paid)}</td><td>${dueCell(e)}</td><td>${badge(e.status, e.status.startsWith('Pago') || isGift(e) ? 'pago' : 'pendente')}</td><td><div class="row-actions"><button class="attach-button" data-action="attach-expense" data-id="${e.id}" aria-label="Anexos (${files})" title="Fotos, PDFs, contratos e links">${icon('clip')}${files ? `<span class="attach-count">${files}</span>` : ''}</button><button data-action="installments-expense" data-id="${e.id}" aria-label="Parcelas" title="Parcelas e vencimentos">${icon('calendar')}</button><button data-action="edit-expense" data-id="${e.id}" aria-label="Editar">${icon('edit')}</button><button data-action="delete-expense" data-id="${e.id}" aria-label="Excluir">${icon('trash')}</button></div></td></tr>`; };
   return `${heading('ORÇAMENTO', 'Financeiro.', 'Organize os valores com clareza, sem perder a leveza.', '<button class="button button-secondary" data-action="export-finance"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-secondary" data-action="import-expenses"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Importar TXT</button><button class="button button-primary" data-action="add-expense"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Adicionar gasto</button>')}
-  <section class="budget-overview"><article class="card budget-box"><span>Total orçado</span><strong>${money(planned())}</strong><small>Todos os itens, inclusive presentes</small></article><article class="card budget-box"><span>Total pago</span><strong>${money(spent())}</strong><small>Valores já quitados</small></article><article class="card budget-box"><span>Presentes ganhos</span><strong>${money(gifted())}</strong><small>Não entram no saldo a pagar</small></article><article class="card budget-box budget-due"><span>Saldo a pagar</span><strong>${money(due())}</strong><small>${due() ? 'Ainda falta pagar' : 'Tudo quitado ♡'}</small></article></section>
+  <section class="budget-overview"><article class="card budget-box"><span>Total com presentes</span><strong>${money(planned())}</strong><small>Todos os itens do casamento</small></article><article class="card budget-box budget-own"><span>Total sem presentes</span><strong>${money(planned() - gifted())}</strong><small>O que vocês vão pagar</small></article><article class="card budget-box budget-gift"><span>Ganhamos de presente</span><strong>${money(gifted())}</strong><small>Não entra no que falta pagar</small></article><article class="card budget-box budget-due"><span>Falta pagar</span><strong>${money(due())}</strong><small>${due() ? 'Saldo em aberto' : 'Tudo quitado ♡'}</small></article><article class="card budget-box budget-paid"><span>Já pago</span><strong>${money(spent())}</strong><small>Valores já quitados</small></article></section>
   ${suppliers.length ? `<section class="card panel supplier-panel"><div class="panel-head"><div><h2 class="panel-title">Por fornecedor</h2><p class="panel-subtitle">Quanto falta pagar para cada um</p></div></div><div class="supplier-list">${suppliers.map(x => `<div class="supplier-row"><span class="supplier-name"><strong>${esc(x.name)}</strong><small>${x.rows.length} ${x.rows.length === 1 ? 'item' : 'itens'} · previsto ${money(x.planned)}</small></span>${x.due > 0 ? `<span class="category-total category-due">${money(x.due)} faltam</span>` : '<span class="category-total">Quitado</span>'}</div>`).join('')}</div></section>` : ''}
   <div class="toolbar"><select id="expense-filter" class="filter-select"><option>Todas</option>${allCategories.map(c => `<option ${expenseFilter === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select><button class="button button-secondary" data-action="add-category">${icon('plus')}Categoria</button></div>
   ${categories.map(cat => { const rows = data.expenses.filter(e => e.category === cat); const sum = rows.reduce((a, e) => a + Number(e.planned || 0), 0); const removable = !rows.length && (data.customCategories || []).includes(cat); return `<section class="category-section"><div class="card category-head" data-collapse="${esc(cat)}"><div><h3>${esc(cat)}</h3><p>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} · previsto ${money(sum)}</p></div>${rows.length ? totals(rows) : removable ? `<button class="text-button" data-action="delete-category" data-id="${esc(cat)}">Remover categoria</button>` : '<span class="category-total">＋</span>'}</div><div class="card table-card"><div class="table-wrap"><table><thead><tr><th>Descrição</th><th>Valor previsto</th><th>Valor pago</th><th>Falta pagar</th><th>Pagamento</th><th></th></tr></thead><tbody>${rows.length ? rows.map(row).join('') : `<tr><td colspan="6">${empty('Nenhum gasto nesta categoria ainda.')}</td></tr>`}</tbody></table></div></div></section>`; }).join('')}`;
@@ -628,7 +643,7 @@ function renderTimeline() {
     return `<article class="task-card prio-${slugOf(t.priority || 'Média')} ${done ? 'is-done' : ''} ${t.status === 'Em Andamento' ? 'is-doing' : ''}" draggable="true" data-task-id="${t.id}">
       <input type="checkbox" class="task-check" data-task-toggle="${t.id}" ${done ? 'checked' : ''} aria-label="Concluir ${esc(t.title)}">
       <button type="button" class="task-card-body" data-action="edit-task" data-id="${t.id}">${side ? `<span class="task-card-tag">${esc(t.date ? shortDate(t.date) : t.priority || 'Média')}</span>` : ''}${t.time ? `<span class="task-card-time">${esc(t.time)}</span>` : ''}<span class="task-card-title">${esc(t.title)}</span>${t.responsible ? `<span class="task-card-who">${icon('users')}${esc(t.responsible)}</span>` : ''}</button>
-      <span class="task-card-actions"><button type="button" data-action="attach-task" data-id="${t.id}" aria-label="Anexos" title="Fotos, PDFs e links">${icon('clip')}${files ? `<b>${files}</b>` : ''}</button>${t.responsible && t.responsiblePhone ? `<button type="button" data-action="notify-task" data-id="${t.id}" aria-label="Avisar ${esc(t.responsible)} no WhatsApp" title="Avisar no WhatsApp">${icon('chat')}</button>` : ''}<button type="button" data-action="delete-task" data-id="${t.id}" aria-label="Excluir">${icon('trash')}</button></span>
+      <span class="task-card-actions"><button type="button" data-action="attach-task" data-id="${t.id}" aria-label="Anexos" title="Fotos, PDFs e links">${icon('clip')}${files ? `<b>${files}</b>` : ''}</button><button type="button" data-action="delete-task" data-id="${t.id}" aria-label="Excluir">${icon('trash')}</button></span>
     </article>`;
   };
   const day = d => {
@@ -643,8 +658,8 @@ function renderTimeline() {
   const label = `${fmt(weekStart, sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'short' })} – ${fmt(days[6], { day: 'numeric', month: 'short', year: 'numeric' })}`;
   return `${heading('PLANEJAMENTO', 'Cronograma.', 'Organize a semana, arraste as tarefas entre os dias e guarde em Prioridades o que ainda não tem data.', `<button class="button button-secondary" data-action="generate-checklist">${icon('check')}Checklist do casamento</button>` + '<button class="button button-secondary" data-action="export-timeline"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PDF</button><button class="button button-primary" data-action="add-task"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nova tarefa</button>')}
   <div class="summary-row"><span class="summary-chip">A fazer <strong>${open.length}</strong></span><span class="summary-chip">Concluídas <strong>${data.tasks.length - open.length}</strong></span><span class="summary-chip">Prioridades <strong>${priorities.length}</strong></span>${overdue.length ? `<span class="summary-chip is-late">Atrasadas <strong>${overdue.length}</strong></span>` : ''}</div>
-  <div class="custom-tabs view-tabs" role="tablist"><button type="button" role="tab" data-view="semana" aria-selected="${timelineView === 'semana'}">Semana</button><button type="button" role="tab" data-view="quadro" aria-selected="${timelineView === 'quadro'}">Quadro</button><button type="button" role="tab" data-view="mes" aria-selected="${timelineView === 'mes'}">Mês a mês</button></div>
-  ${timelineView === 'quadro' ? renderBoard() : timelineView === 'mes' ? renderMonths() : `<div class="planner-layout">
+  <div class="custom-tabs view-tabs" role="tablist"><button type="button" role="tab" data-view="semana" aria-selected="${timelineView === 'semana'}">Semana</button><button type="button" role="tab" data-view="quadro" aria-selected="${timelineView === 'quadro'}">Quadro</button><button type="button" role="tab" data-view="mes" aria-selected="${timelineView === 'mes'}">Mês a mês</button><button type="button" role="tab" data-view="pessoas" aria-selected="${timelineView === 'pessoas'}">Por pessoa</button></div>
+  ${timelineView === 'quadro' ? renderBoard() : timelineView === 'mes' ? renderMonths() : timelineView === 'pessoas' ? renderPeople() : `<div class="planner-layout">
     <section class="card week-card">
       <div class="week-bar">
         <div class="week-nav"><button type="button" class="icon-button" data-week="-1" aria-label="Semana anterior">‹</button><h2 class="week-label">${esc(label)}</h2><button type="button" class="icon-button" data-week="1" aria-label="Próxima semana">›</button></div>
@@ -663,6 +678,76 @@ function renderTimeline() {
   </div>`}`;
 }
 // Quadro estilo Trello: uma coluna por mês até o casamento; arrastar o cartão muda o prazo.
+/* Tarefas por pessoa e lembretes na agenda ------------------------------------ */
+const daysUntil = value => Math.round((fromIso(value) - fromIso(todayIso())) / 864e5);
+function deadlineOf(t) {
+  if (t.status === 'Concluído') return { cls: 'is-done', text: 'Feita' };
+  if (!t.date) return { cls: 'is-none', text: 'Sem prazo' };
+  const n = daysUntil(t.date);
+  if (n < 0) return { cls: 'is-late', text: `Atrasada há ${-n} ${n === -1 ? 'dia' : 'dias'}` };
+  if (n === 0) return { cls: 'is-today', text: 'Vence hoje' };
+  if (n === 1) return { cls: 'is-soon', text: 'Vence amanhã' };
+  if (n <= 7) return { cls: 'is-soon', text: `Faltam ${n} dias` };
+  return { cls: 'is-ok', text: shortDate(t.date) };
+}
+// Tarefas em aberto com prazo vencido ou acabando (até 3 dias).
+const urgentTasks = () => data.tasks.filter(t => t.status !== 'Concluído' && t.date && daysUntil(t.date) <= 3);
+const NOBODY = 'Sem responsável';
+function renderPeople() {
+  const groups = new Map();
+  data.tasks.forEach(t => { const who = (t.responsible || '').trim() || NOBODY; if (!groups.has(who)) groups.set(who, []); groups.get(who).push(t); });
+  const score = list => list.filter(t => t.status !== 'Concluído' && t.date && daysUntil(t.date) < 0).length * 100 + list.filter(t => t.status !== 'Concluído' && t.date && daysUntil(t.date) >= 0 && daysUntil(t.date) <= 7).length;
+  const people = [...groups.keys()].sort((a, b) => (a === NOBODY) - (b === NOBODY) || score(groups.get(b)) - score(groups.get(a)) || a.localeCompare(b));
+  const canShare = typeof navigator.canShare === 'function';
+  const row = t => { const d = deadlineOf(t); return `<li class="${t.status === 'Concluído' ? 'is-done' : ''}"><input type="checkbox" class="task-check" data-task-toggle="${t.id}" ${t.status === 'Concluído' ? 'checked' : ''} aria-label="Concluir ${esc(t.title)}"><button type="button" class="month-task" data-action="edit-task" data-id="${t.id}">${esc(t.title)}${t.time ? ` <small>${esc(t.time)}</small>` : ''}</button><span class="deadline ${d.cls}">${esc(d.text)}</span></li>`; };
+  const card = who => {
+    const list = groups.get(who), open = list.filter(t => t.status !== 'Concluído').sort(byTaskOrder), done = list.filter(t => t.status === 'Concluído');
+    const late = open.filter(t => t.date && daysUntil(t.date) < 0).length, soon = open.filter(t => t.date && daysUntil(t.date) >= 0 && daysUntil(t.date) <= 7).length, dated = open.filter(t => t.date).length;
+    return `<section class="card person-card ${late ? 'is-late' : ''}">
+      <header class="person-head"><div><h3>${esc(who)}</h3><p>${open.length} ${open.length === 1 ? 'tarefa' : 'tarefas'} a fazer${late ? ` · <b class="is-late">${late} atrasada${late > 1 ? 's' : ''}</b>` : ''}${soon ? ` · <b>${soon} com prazo acabando</b>` : ''}</p></div>${who === NOBODY ? '' : `<button type="button" class="icon-button" data-add-task-for="${esc(who)}" aria-label="Nova tarefa para ${esc(who)}">${icon('plus')}</button>`}</header>
+      <ul class="month-list">${open.map(row).join('') || '<li class="person-empty">Nada pendente ♡</li>'}</ul>
+      ${done.length ? `<details class="priority-done"><summary>Concluídas · ${done.length}</summary><ul class="month-list">${done.map(row).join('')}</ul></details>` : ''}
+      ${dated ? `<div class="person-actions"><button type="button" class="button button-secondary button-sm" data-ics="${esc(who)}">${icon('calendar')}Na agenda</button>${canShare && who !== NOBODY ? `<button type="button" class="button button-secondary button-sm" data-ics-share="${esc(who)}">${icon('share')}Enviar para ${esc(who.split(' ')[0])}</button>` : ''}</div>` : ''}
+    </section>`;
+  };
+  return `<section class="notice-card people-notice"><div><strong>Lembretes que chegam sozinhos</strong><p>Coloque as tarefas na agenda do celular: ela avisa 1 dia antes e no dia, mesmo com o site fechado. Cada pessoa pode receber só a agenda dela.</p></div><button class="button button-secondary" data-ics="*">${icon('calendar')}Todas na minha agenda</button></section>
+  ${people.length ? `<div class="people-grid">${people.map(card).join('')}</div>` : '<section class="card empty-state"><p>Ainda não há tarefas. Ao criar uma, escolha o responsável e ela aparece aqui.</p></section>'}`;
+}
+function icsFile(who) {
+  const tasks = data.tasks.filter(t => t.status !== 'Concluído' && t.date && (who === '*' || ((t.responsible || '').trim() || NOBODY) === who));
+  const text = v => String(v || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const alarm = (trigger, msg) => ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${text(msg)}`, `TRIGGER:${trigger}`, 'END:VALARM'];
+  const events = tasks.flatMap(t => {
+    const day = t.date.replace(/-/g, ''), timed = /^\d{2}:\d{2}$/.test(t.time || '');
+    return ['BEGIN:VEVENT', `UID:${t.id}@entrenos.app`, `DTSTAMP:${stamp}`,
+      ...(timed ? [`DTSTART:${day}T${t.time.replace(':', '')}00`, 'DURATION:PT1H'] : [`DTSTART;VALUE=DATE:${day}`, `DTEND;VALUE=DATE:${addDays(t.date, 1).replace(/-/g, '')}`]),
+      `SUMMARY:${text(`${t.title}${who === '*' && t.responsible ? ` (${t.responsible})` : ''}`)}`,
+      `DESCRIPTION:${text([t.description, `Casamento de ${data.wedding.couple}`].filter(Boolean).join('\n'))}`,
+      ...alarm(timed ? '-P1D' : '-PT15H', `Amanhã: ${t.title}`), ...alarm(timed ? '-PT2H' : 'PT9H', `Hoje: ${t.title}`), 'END:VEVENT'];
+  });
+  const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Entre Nos//Cronograma//PT', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${text(`Casamento ${data.wedding.couple}`)}`, ...events, 'END:VCALENDAR'].join('\r\n');
+  const name = `tarefas-${who === '*' ? 'casamento' : slugOf(who)}.ics`;
+  return { count: tasks.length, file: new File([body], name, { type: 'text/calendar' }) };
+}
+async function exportIcs(who, share = false) {
+  const { count, file } = icsFile(who);
+  if (!count) { notify('Só entram na agenda as tarefas com data.'); return; }
+  if (share && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Tarefas do casamento', text: `Suas tarefas do casamento de ${data.wedding.couple}. Abra o arquivo para colocar na agenda: ela avisa 1 dia antes e no dia.` }); } catch {}
+    return;
+  }
+  const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: file.name });
+  document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+  notify(`${count} ${count === 1 ? 'tarefa enviada' : 'tarefas enviadas'} para a agenda. Abra o arquivo baixado para confirmar.`);
+}
+function updateNavBadges() {
+  const item = $('.nav-item[data-page="cronograma"]'); if (!item) return;
+  const n = urgentTasks().length; let badge = item.querySelector('.nav-badge');
+  if (!n) { badge?.remove(); return; }
+  if (!badge) { badge = Object.assign(document.createElement('b'), { className: 'nav-badge' }); item.append(badge); }
+  badge.textContent = n; badge.title = `${n} ${n === 1 ? 'tarefa atrasada ou com prazo acabando' : 'tarefas atrasadas ou com prazo acabando'}`;
+}
 function renderBoard() {
   const today = todayIso(), current = today.slice(0, 7), wedding = data.wedding.date;
   const dated = data.tasks.filter(t => t.date);
@@ -782,34 +867,20 @@ function recordForm(kind, record = {}) {
   if (kind === 'ceremonial') return [field('time', 'Horário', record.time || '', 'time', null, false, { required: true }), field('title', 'Atividade', record.title || '', 'text', null, true, { required: true }), field('responsible', 'Responsável', record.responsible || '', 'text', null, false, { required: true }), field('track', 'Cronograma de quem', record.track || 'Geral', 'text', tracks), field('status', 'Status', record.status || 'A Fazer', 'text', taskStatuses), field('details', 'Orientações para a equipe', record.details || '', 'textarea', null, true)].join('');
   if (kind === 'wedding') return [field('couple', 'Nomes do casal', data.wedding.couple, 'text', null, true, { required: true }), field('date', 'Data do casamento', data.wedding.date, 'date', null, false, { required: true }), field('time', 'Horário do casamento', data.wedding.time || '11:30', 'time', null, false, { required: true }), field('venue', 'Local', data.wedding.venue, 'text', null, true), field('guestsExpected', 'Convidados previstos', data.wedding.guestsExpected || '', 'number', null, false, { min: 0, placeholder: 'Ex.: 100' }), field('budget', 'Orçamento máximo (R$)', data.wedding.budget || '', 'number', null, false, { min: 0, step: '.01', placeholder: 'Ex.: 30000' }), field('style', 'Estilo', data.wedding.style || WEDDING_STYLES[0], 'text', WEDDING_STYLES), field('ceremonyType', 'Cerimônia', data.wedding.ceremonyType || CEREMONY_TYPES[0], 'text', CEREMONY_TYPES), '<p class="field-hint" style="grid-column:1/-1;margin:0">Com o orçamento e o número de convidados, a cerimonialista virtual sugere quanto gastar em cada categoria e monta o checklist pelo estilo e tipo de cerimônia.</p>'].join('');
 }
-// Responsável com sugestões dos convidados (o WhatsApp é preenchido sozinho quando a pessoa tem telefone).
+// Responsável com sugestões dos convidados (o telefone é preenchido sozinho quando a pessoa já tem um).
 const knownPeople = () => new Map([...data.guests.map(g => [g.name, g.phone || '']), ...data.tasks.filter(t => t.responsible).map(t => [t.responsible, t.responsiblePhone || ''])]);
 function responsibleFields(record) {
-  return `<div class="field"><label for="field-responsible">Responsável</label><input id="field-responsible" name="responsible" list="people-list" value="${esc(record.responsible || '')}" placeholder="Quem cuida disso" autocomplete="off"><datalist id="people-list">${[...knownPeople().keys()].map(name => `<option value="${esc(name)}">`).join('')}</datalist></div><div class="field"><label for="field-responsiblePhone">WhatsApp do responsável</label><input id="field-responsiblePhone" name="responsiblePhone" type="tel" value="${esc(record.responsiblePhone || '')}" placeholder="(11) 99999-0000"></div>`;
-}
-function whatsappTaskUrl(task) {
-  const phone = String(task.responsiblePhone || '').replace(/\D/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1');
-  const when = task.date ? `${fromIso(task.date).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}${task.time ? ` às ${task.time}` : ''}` : 'sem data definida ainda';
-  const text = [`Oi, ${task.responsible.split(' ')[0]}! ♡`, `Você ficou responsável por: *${task.title}*`, `Quando: ${when}`, ...(task.description ? [`Detalhes: ${task.description}`] : []), '', `Planejamento do casamento de ${data.wedding.couple}`].join('\n');
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-}
-function notifyResponsible(task) {
-  if (!task?.responsible || !task.responsiblePhone) return;
-  openModal(`Avisar ${task.responsible}?`, `<p class="confirm-copy">Abrir o WhatsApp com uma mensagem para ${esc(task.responsible)} sobre a tarefa <strong>${esc(task.title)}</strong>${task.date ? ` (${esc(shortDate(task.date))}${task.time ? ` às ${esc(task.time)}` : ''})` : ''}. É só tocar em enviar.</p>`, () => window.open(whatsappTaskUrl(task), '_blank', 'noopener'));
-  $('#modal-submit').textContent = 'Abrir WhatsApp';
+  return `<div class="field"><label for="field-responsible">Responsável</label><input id="field-responsible" name="responsible" list="people-list" value="${esc(record.responsible || '')}" placeholder="Quem cuida disso" autocomplete="off"><datalist id="people-list">${[...knownPeople().keys()].map(name => `<option value="${esc(name)}">`).join('')}</datalist></div><div class="field"><label for="field-responsiblePhone">Telefone do responsável</label><input id="field-responsiblePhone" name="responsiblePhone" type="tel" value="${esc(record.responsiblePhone || '')}" placeholder="(11) 99999-0000"></div>`;
 }
 function addOrEdit(kind, id = null, preset = {}) {
   const config = { document: ['documents', 'documento', 'title', 'id'], inspiration: ['inspirations', 'mural', 'title', 'id'], table: ['tables', 'mesa', 'name', 'id'], contact: ['emergencyContacts', 'contato', 'name', 'id'], place: ['places', 'endereço', 'name', 'id'], planb: ['planB', 'plano B', 'problem', 'id'], kit: ['kit', 'item do kit', 'item', 'id'], hmDestination: ['hmDestinations', 'destino', 'name', 'id'], hmBooking: ['hmBookings', 'reserva', 'title', 'id'], hmItinerary: ['hmItinerary', 'passeio', 'activity', 'id'], vendor: ['vendors', 'fornecedor', 'name', 'id'], guest: ['guests', 'convidado', 'name', 'id'], expense: ['expenses', 'gasto', 'description', 'id'], ceremony: ['ceremony', 'etapa', 'step', 'id'], ceremonial: ['ceremonial', 'horário da cerimonial', 'title', 'id'], supply: ['supplies', 'item', 'name', 'id'], task: ['tasks', 'tarefa', 'title', 'id'], note: ['notes', 'anotação', 'title', 'id'] }[kind];
   const [collection, label, , idKey] = config; const existing = id ? data[collection].find(x => x[idKey] === id) : null;
-  const before = existing ? `${existing.responsible}|${existing.responsiblePhone}|${existing.date}|${existing.time}|${existing.title}` : '';
   openModal(`${existing ? 'Editar' : 'Adicionar'} ${label}`, recordForm(kind, existing || preset), values => {
     for (const k of ['companions', 'children', 'planned', 'paid', 'price', 'discount', 'fees', 'seats', 'estimate', 'overtime']) if (values[k] !== undefined) values[k] = Number(values[k] || 0);
     if (kind === 'inspiration') { values.colors = values.showColors ? [0, 1, 2, 3].map(i => values[`c${i}`]).filter(Boolean) : []; [0, 1, 2, 3].forEach(i => delete values[`c${i}`]); delete values.showColors; }
     if (existing) Object.assign(existing, values, kind === 'note' ? { updatedAt: new Date().toISOString() } : {}); else data[collection].push({ id: uid(kind[0]), ...values, ...(kind === 'note' ? { updatedAt: new Date().toISOString() } : {}) });
     save(kind === 'note' ? 'Anotação salva.' : existing ? 'Alterações salvas.' : 'Item adicionado.');
-    const task = kind === 'task' ? (existing || data.tasks[data.tasks.length - 1]) : null;
     if (!existing && (kind === 'document' || kind === 'inspiration')) { const record = data[collection][data[collection].length - 1]; setTimeout(() => openAttachments(record.id, collection), 80); }
-    if (task?.responsible && task.responsiblePhone && `${task.responsible}|${task.responsiblePhone}|${task.date}|${task.time}|${task.title}` !== before) setTimeout(() => notifyResponsible(task), 80);
   });
   if (kind === 'task') $('#field-responsible')?.addEventListener('change', event => { const phone = knownPeople().get(event.target.value.trim()); const input = $('#field-responsiblePhone'); if (phone && input && !input.value) input.value = phone; });
 }
@@ -1040,7 +1111,7 @@ function exportCeremonialPdf() {
 function exportFinancePdf() {
   const doc = pdfBase('Relatório financeiro e orçamento'); if (!doc) return;
   pdfHeading(doc, 'Relatório financeiro', `${data.wedding.couple}  •  ${dateLabel(data.wedding.date)}  •  ${data.wedding.venue}`);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(45); doc.text(`Total orçado: ${money(planned())}     Pago: ${money(spent())}     Presentes: ${money(gifted())}     Falta pagar: ${money(due())}`, 14, 39);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(45); doc.text(`Com presentes: ${money(planned())}   Sem presentes: ${money(planned() - gifted())}   Presentes: ${money(gifted())}   Falta pagar: ${money(due())}   Pago: ${money(spent())}`, 14, 39);
   doc.autoTable({ startY: 46, head: [['Categoria', 'Item / fornecedor', 'Valor previsto', 'Valor pago', 'Falta pagar', 'Status']], body: data.expenses.map(e => [e.category, e.supplier ? `${e.description}\n${e.supplier}` : e.description, money(e.planned), money(e.paid), isGift(e) ? 'Presente' : money(dueOf(e)), e.status]), theme: 'grid', margin: { left: 14, right: 14, bottom: 16 }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, lineColor: [205, 211, 205], lineWidth: .15 }, headStyles: { fillColor: [95, 107, 42], textColor: 255 }, rowPageBreak: 'avoid', columnStyles: { 0: { cellWidth: 52 }, 1: { cellWidth: 72 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } } });
   pdfFooter(doc); doc.save('relatorio-financeiro.pdf'); notify('Relatório financeiro exportado em PDF.');
 }
@@ -1107,7 +1178,6 @@ function bindPageEvents() {
     if (action === 'attach-booking') openAttachments(id, 'hmBookings');
     if (action === 'edit-board') openAttachments('sonhos', 'hmBoard');
     if (action === 'generate-checklist') { if (!data.wedding.date) { notify('Defina a data do casamento primeiro.'); return; } const n = addChecklistItems(); timelineView = 'mes'; if (currentPage !== 'cronograma') setPage('cronograma'); else render(); save(n ? `${n} etapas adicionadas ao cronograma.` : 'O checklist já está no cronograma.', false); }
-    if (action === 'notify-task') notifyResponsible(data.tasks.find(t => t.id === id));
     if (action === 'add-category') addCategory();
     if (action === 'delete-category') { data.customCategories = (data.customCategories || []).filter(c => c !== id); if (expenseFilter === id) expenseFilter = 'Todas'; save('Categoria removida.'); render(); }
     if (action === 'delete-ceremony') deleteRecord('ceremony', id, 'esta etapa');
@@ -1171,6 +1241,9 @@ function page_bindSmart() {
   const board = data.hmBoard[0];
   page.querySelectorAll('[data-dream-file]').forEach(span => { const f = board?.files?.find(x => x.id === span.dataset.dreamFile); if (f) readAttachment(f).then(url => { span.querySelector('img').src = url; }).catch(() => {}); });
   page.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { timelineView = b.dataset.view; render(); }));
+  page.querySelectorAll('[data-ics]').forEach(b => b.addEventListener('click', () => exportIcs(b.dataset.ics)));
+  page.querySelectorAll('[data-ics-share]').forEach(b => b.addEventListener('click', () => exportIcs(b.dataset.icsShare, true)));
+  page.querySelectorAll('[data-add-task-for]').forEach(b => b.addEventListener('click', () => addOrEdit('task', null, { responsible: b.dataset.addTaskFor })));
   page.querySelectorAll('[data-add-suggestion]').forEach(b => b.addEventListener('click', () => { addChecklistItems([b.dataset.addSuggestion]); save('Etapa adicionada ao cronograma.', false); render(); }));
   page.querySelectorAll('[data-vendor-status]').forEach(select => select.addEventListener('change', () => {
     const v = data.vendors.find(x => x.id === select.dataset.vendorStatus);
@@ -1186,14 +1259,15 @@ function page_bindSmart() {
   const ask = question => {
     askThread.push({ question, reply: null });
     paint();
-    setTimeout(() => { askThread[askThread.length - 1].reply = answer(question, data); askThread = askThread.slice(-8); paint(); }, 450);
+    setTimeout(() => { const reply = answer(question, data, undefined, askMemory); askMemory = reply.memory; askThread[askThread.length - 1].reply = reply; askThread = askThread.slice(-8); paint(); }, 450);
   };
   const bindThread = () => {
     thread.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => ask(b.dataset.ask)));
     thread.querySelectorAll('[data-ask-go]').forEach(b => b.addEventListener('click', () => setPage(b.dataset.askGo)));
+    thread.querySelectorAll('[data-ask-action]').forEach(b => b.addEventListener('click', () => askAction(askThread[Number(b.dataset.askAction)]?.reply?.action, b)));
   };
   if (thread) { bindThread(); thread.scrollTop = thread.scrollHeight; }
-  page.querySelector('[data-ask-clear]')?.addEventListener('click', () => { askThread = []; render(); });
+  page.querySelector('[data-ask-clear]')?.addEventListener('click', () => { askThread = []; askMemory = {}; render(); });
   $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) { e.target.q.value = ''; ask(q); } });
 }
 function bindWeekEvents() {
@@ -1268,7 +1342,7 @@ const guideSteps = [
   { page: 'inicio', target: '.event-card', title: 'O grande dia', text: 'Aqui ficam o casal, o local, a data e a contagem regressiva. As pílulas Qua, Qui, Sex e Sáb mostram quantas tarefas de cada dia já foram feitas. Use "Editar detalhes" para mudar data, horário ou local.' },
   { page: 'inicio', target: '.notice-card', title: 'Próximo passo', text: 'Mostra a próxima tarefa pendente do cronograma. Terminou? Clique em "Marcar como feita" e o painel já mostra a seguinte.' },
   { page: 'inicio', target: '.stats-grid', title: 'Resumo em números', text: 'Convidados confirmados, quanto já foi pago, o saldo, as tarefas e os itens no local. Clique em qualquer card para abrir a página correspondente.' },
-  { page: 'cronograma', target: '.nav-item[data-page="cronograma"]', title: 'Cronograma', text: 'Um calendário semanal: avance ou volte as semanas, arraste as tarefas entre os dias e use Prioridades para o que ainda não tem data. Com responsável e WhatsApp, você avisa a pessoa em um toque.' },
+  { page: 'cronograma', target: '.nav-item[data-page="cronograma"]', title: 'Cronograma', text: 'Um calendário semanal: avance ou volte as semanas, arraste as tarefas entre os dias e use Prioridades para o que ainda não tem data. Em "Por pessoa" ficam as tarefas de cada um com o prazo, e o botão "Na agenda" coloca os lembretes no celular.' },
   { page: 'checklist', target: '.nav-item[data-page="checklist"]', title: 'O que levar', text: 'A lista do que precisa chegar ao local, por categoria. Acompanhe cada item como Pendente, Comprado, No carro ou No local, e marque "No local" quando ele chegar.' },
   { page: 'anotacoes', target: '.nav-item[data-page="anotacoes"]', title: 'Anotações', text: 'Guarde ideias, links e lembretes. O editor aceita negrito, itálico, listas e links.' },
   { page: 'convidados', target: '.nav-item[data-page="convidados"]', title: 'Convidados', text: 'Cadastre cada convidado com grupo, telefone, acompanhantes e status do convite. Busque por nome, filtre por grupo ou importe uma lista pronta em TXT.' },
