@@ -10,14 +10,15 @@ Site estático (HTML, CSS e JavaScript) conectado ao Firebase Authentication e a
 | Lista de presentes de chá de panela | `lista.html?c=<link>` | Chá de panela |
 | Ebook PDF chá de panela | baixado na área do cliente | Chá de panela |
 | Site de casamento | `site.html?c=<link>` | Casamento |
-| Organizador de casamento | `organizador.html` (com login) | Casamento |
+| Organizador de casamento | `index.html` (com login) | Casamento |
 
 ## Páginas
 
-- `index.html`: área do cliente. Login com usuário e senha, produtos comprados, Pix pendente, confirmações de presença e presentes escolhidos.
+- `index.html`: organizador de casamento (página principal do site): convidados, financeiro, cronograma etc.
+- `cliente.html`: área do cliente. Login com usuário e senha, produtos comprados, Pix pendente, confirmações de presença e presentes escolhidos.
 - `admin.html`: painel administrativo. Cadastrar compras, gerar usuário e senha, gerar QR Code Pix, marcar como pago, redefinir senha, cancelar e excluir.
 - `convite.html`, `lista.html`, `site.html`: páginas públicas que os convidados abrem.
-- `organizador.html`: organizador de casamento (convidados, financeiro, cronograma etc.).
+- `organizador.html`: só redireciona para `index.html` (mantido para links antigos).
 
 ## Configuração (uma vez)
 
@@ -53,5 +54,5 @@ Observações:
 - Clientes entram com um usuário simples; internamente o Firebase usa o e-mail `usuario@acesso.entrenos.app`.
 - Para redefinir a senha sem servidor, o painel entra na conta do cliente com a senha guardada e define uma nova. Por isso os clientes não trocam a senha sozinhos.
 - O Pix é um BR Code estático gerado no navegador. A confirmação do pagamento é manual (botão **Marcar como pago**).
-- Contas antigas do organizador, criadas antes da plataforma, não têm cadastro em `accounts` e por isso não abrem mais o organizador. Recadastre esses casais pelo painel.
+- Contas antigas do organizador, criadas antes da plataforma, não têm cadastro em `accounts` e continuam abrindo o organizador normalmente.
 - PDFs (ebook e relatórios do organizador) são gerados no navegador com jsPDF carregado por CDN.

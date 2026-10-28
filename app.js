@@ -624,7 +624,7 @@ $('#sign-out')?.addEventListener('click', () => signOut(auth));
 function showAccessMessage(message) {
   $('#app-shell').hidden = true;
   $('#auth-panel').hidden = false;
-  $('#auth-error').innerHTML = `${esc(message)} <a href="index.html">Ir para minha área</a>`;
+  $('#auth-error').innerHTML = `${esc(message)} <a href="cliente.html">Ir para minha área</a>`;
 }
 onAuthStateChanged(auth, async user => {
   if (stopRealtime) { stopRealtime(); stopRealtime = null; }
@@ -639,10 +639,13 @@ onAuthStateChanged(auth, async user => {
     let site = null;
     if (!isAdmin(user)) {
       const account = (await getDoc(doc(db, 'accounts', user.uid))).data();
-      if (!account?.products?.organizador) return showAccessMessage('Seu acesso não inclui o Organizador de casamento.');
-      if (account.status !== 'pago') return showAccessMessage('O organizador será liberado assim que o pagamento for confirmado.');
-      document.body.dataset.theme = `m${account.products.organizador}`;
-      if (account.slug) site = (await getDoc(doc(db, 'sites', account.slug))).data() || null;
+      // Contas antigas, criadas antes da plataforma, não têm cadastro em accounts e continuam abrindo o planejamento.
+      if (account) {
+        if (!account.products?.organizador) return showAccessMessage('Seu acesso não inclui o Organizador de casamento.');
+        if (account.status !== 'pago') return showAccessMessage('O organizador será liberado assim que o pagamento for confirmado.');
+        document.body.dataset.theme = `m${account.products.organizador}`;
+        if (account.slug) site = (await getDoc(doc(db, 'sites', account.slug))).data() || null;
+      }
     }
     $('#auth-panel').hidden = true;
     $('#app-shell').hidden = false;

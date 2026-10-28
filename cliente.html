@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="Área do cliente Entre Nós: convites, lista de presentes, site e organizador do casamento." />
+    <title>Minha área — Entre Nós</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="admin.css" />
+    <link rel="stylesheet" href="hub.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" defer></script>
+    <script type="module" src="hub.js"></script>
+  </head>
+  <body class="admin-page hub-page">
+    <section id="auth-panel" class="auth-panel">
+      <form id="auth-form" class="auth-card">
+        <span class="brand brand-auth"><svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="18" r="7.5"/><circle cx="20" cy="18" r="7.5"/><path d="m16 4 2.4 3.2L16 10.4l-2.4-3.2z"/></svg><span class="brand-word">entre nós</span></span>
+        <p class="eyebrow">ÁREA DO CLIENTE</p>
+        <h1>Acesse seus produtos</h1>
+        <p>Use o usuário e a senha que você recebeu na compra.</p>
+        <label for="auth-user">Usuário</label>
+        <input id="auth-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required />
+        <label for="auth-password">Senha</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required />
+        <p id="auth-error" class="auth-error" role="alert"></p>
+        <button id="auth-submit" class="button button-primary" type="submit">Entrar</button>
+        <p class="auth-help">Esqueceu a senha? Fale com a gente pelo WhatsApp em que fez a compra.</p>
+      </form>
+    </section>
+    <div class="app-shell" id="app-shell" hidden>
+      <header class="topbar">
+        <div class="topbar-left">
+          <a class="brand" href="cliente.html" aria-label="Entre Nós, minha área"><svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="18" r="7.5"/><circle cx="20" cy="18" r="7.5"/><path d="m16 4 2.4 3.2L16 10.4l-2.4-3.2z"/></svg><span class="brand-word">entre nós</span></a>
+        </div>
+        <div class="topbar-right">
+          <a id="admin-link" class="button button-secondary" href="admin.html" hidden>Painel admin</a>
+          <button id="sign-out" class="button button-secondary sign-out" type="button"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg><span>Sair</span></button>
+        </div>
+      </header>
+      <main class="main-area">
+        <div id="page-content" class="page-content"></div>
+      </main>
+    </div>
+    <dialog id="admin-modal" class="modal admin-modal"><div id="admin-modal-body"></div></dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

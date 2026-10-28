@@ -34,7 +34,7 @@ async function copy(text, message = 'Copiado.') {
 }
 const priceOf = key => Number(settings.prices?.[key] ?? PRODUCTS[key].price);
 const randomPassword = () => { const chars = 'abcdefghjkmnpqrstuvwxyz23456789'; const bytes = crypto.getRandomValues(new Uint8Array(8)); return [...bytes].map(b => chars[b % chars.length]).join(''); };
-const areaUrl = () => new URL('index.html', location.href).href;
+const areaUrl = () => new URL('cliente.html', location.href).href;
 const statusBadge = status => `<span class="badge ${status === 'pago' ? 'badge-pago' : status === 'cancelado' ? 'badge-cancelado' : 'badge-pendente'}">${esc(STATUS[status]?.label || status)}</span>`;
 const productNames = products => Object.keys(products || {}).filter(k => PRODUCTS[k]).map(k => `${PRODUCTS[k].name} (${MODELS[products[k]]?.name || ''})`);
 const txidFor = client => `EN${client.slug.replace(/[^a-z0-9]/gi, '')}`.slice(0, 25).toUpperCase();
