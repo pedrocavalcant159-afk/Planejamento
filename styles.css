@@ -320,6 +320,8 @@ td[data-label="Valor previsto"], td[data-label="Valor pago"] { text-align: right
 .category-head h3 { margin: 0; font-size: 16px; font-weight: 500; }
 .category-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 .category-total { padding: 4px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.category-totals { display: grid; justify-items: end; gap: 6px; }
+.category-due { background: #fef0ee; color: var(--danger); }
 .category-section .table-card { margin-top: -1px; border-radius: 0 0 var(--radius) var(--radius); }
 .category-section:not(.collapsed) .category-head { border-radius: var(--radius) var(--radius) 0 0; }
 .category-section.collapsed .table-card { display: none; }
