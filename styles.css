@@ -322,6 +322,7 @@ td[data-label="Falta pagar"] { text-align: right; font-variant-numeric: tabular-
 .due-value { color: var(--danger); font-weight: 500; }
 .due-done, .due-gift { color: var(--muted); font-size: 13px; }
 .due-gift { color: #6b4c9a; }
+.due-gift-left { font-size: inherit; font-weight: 500; }
 .supplier-panel { margin-bottom: 20px; }
 .supplier-list { display: grid; gap: 2px; }
 .supplier-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
