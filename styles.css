@@ -65,9 +65,6 @@ body[data-theme="m3"] .event-card h2 { color: var(--gold-light); }
 body[data-theme="m3"] .event-info > p { color: #b8ab8f; }
 body[data-theme="m3"] .event-icon { background: rgba(212, 175, 99, .14); color: var(--gold); }
 body[data-theme="m3"] .event-card .status-pill { background: rgba(212, 175, 99, .16); color: var(--gold-light); }
-body[data-theme="m3"] .week-chip { border-color: rgba(212, 175, 99, .3); background: transparent; color: #e3d6ba; }
-body[data-theme="m3"] .week-chip.is-current { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
-body[data-theme="m3"] .week-chip.is-done { background: rgba(212, 175, 99, .16); color: var(--gold-light); }
 body[data-theme="m3"] .count-unit { border-color: rgba(212, 175, 99, .25); background: rgba(255, 255, 255, .03); }
 body[data-theme="m3"] .count-unit strong, body[data-theme="m3"] .countdown-complete strong { color: var(--gold-light); }
 body[data-theme="m3"] .count-unit span, body[data-theme="m3"] .countdown-complete span { color: #a39577; }
@@ -227,11 +224,6 @@ body.sidebar-collapsed .collapse-toggle .nav-icon { transform: rotate(180deg); }
 .event-title h2 { margin: 0; font-size: 18px; font-weight: 500; }
 .event-title .status-pill { padding: 3px 10px; font-size: 12px; }
 .event-info > p { margin: 3px 0 10px; color: var(--muted); font-size: 14px; }
-.week-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.week-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; border: 1px solid var(--accent-line); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; }
-.week-chip small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.week-chip.is-current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.week-chip.is-done { border-color: var(--sage-line); background: var(--sage-soft); color: var(--sage-dark); }
 .countdown { display: flex; gap: 6px; }
 .count-unit { min-width: 58px; padding: 7px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fbfaf7; text-align: center; }
 .count-unit strong { display: block; color: var(--ink); font-size: 20px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
@@ -612,6 +604,8 @@ td[data-label="Falta pagar"] { text-align: right; font-variant-numeric: tabular-
 .profile-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12.5px; }
 .profile-edit { grid-column: 1 / -1; justify-self: start; }
 .assistant-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; margin-bottom: 20px; }
+.assistant-page { grid-template-columns: 1.5fr 1fr; align-items: start; }
+.assistant-page .ask-thread { max-height: max(360px, calc(100vh - 380px)); }
 .alert-list { display: grid; gap: 8px; }
 .alert-item { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; color: var(--ink); text-align: left; transition: border-color .15s, transform .15s; }
 .alert-item:not(:disabled):hover { border-color: var(--accent-line); transform: translateX(2px); }
@@ -628,10 +622,12 @@ td[data-label="Falta pagar"] { text-align: right; font-variant-numeric: tabular-
 .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .ask-chip { padding: 6px 11px; border: 1px solid var(--accent-line); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 500; transition: background .15s; }
 .ask-chip:hover { background: #e4ebcf; }
-.ask-form { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
-.ask-form input { min-width: 0; min-height: 38px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: #fff; font-size: 14px; }
+.ask-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 6px; }
+.ask-form textarea { min-width: 0; min-height: 38px; max-height: 160px; padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 19px; background: #fff; font: inherit; font-size: 14px; line-height: 1.45; resize: none; overflow-y: auto; }
+.ask-form .button { min-height: 38px; }
 .ask-thread { display: flex; max-height: 460px; flex-direction: column; gap: 8px; margin-bottom: 10px; overflow-y: auto; scroll-behavior: smooth; }
 .ask-msg { max-width: 92%; padding: 10px 14px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; animation: modal-in .25s ease-out both; }
+.ask-thread .ask-msg:not(:nth-last-child(-n+2)) { animation: none; } /* só a pergunta e a resposta novas entram animadas */
 .ask-msg.is-me { align-self: flex-end; border-bottom-right-radius: 4px; background: var(--accent); color: #fff; }
 .ask-msg.is-bot { align-self: flex-start; border-bottom-left-radius: 4px; background: #f6f4ee; color: var(--text); }
 .ask-msg h3 { margin: 0 0 4px; font-size: 14.5px; font-weight: 600; }
@@ -643,6 +639,12 @@ td[data-label="Falta pagar"] { text-align: right; font-variant-numeric: tabular-
 .ask-msg .ask-chips { margin: 8px 0 0; }
 .ask-msg .ask-chip { background: #fff; }
 .ask-msg.is-typing { display: flex; gap: 4px; padding: 13px 16px; }
+.ask-msg.is-typing { align-items: center; }
+.ask-more { display: inline-flex; gap: 3px; margin-top: 2px; }
+.ask-more i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); opacity: .4; animation: ask-dot 1s infinite ease-in-out; }
+.ask-more i:nth-child(2) { animation-delay: .15s; }
+.ask-more i:nth-child(3) { animation-delay: .3s; }
+.ask-msg.is-typing span { margin-left: 6px; color: var(--muted); font-size: 12.5px; }
 .ask-msg.is-typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .4; animation: ask-dot 1s infinite ease-in-out; }
 .ask-msg.is-typing i:nth-child(2) { animation-delay: .15s; }
 .ask-msg.is-typing i:nth-child(3) { animation-delay: .3s; }

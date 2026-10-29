@@ -31,7 +31,7 @@ No painel, abra o cliente → **Fotos e textos**:
 
 ## Cerimonialista virtual (organizador)
 
-A lógica fica em `lib/planner.js` e só usa os dados do planejamento, sem IA e sem servidor:
+Os alertas e o checklist ficam em `lib/planner.js` e só usam os dados do planejamento. A conversa usa IA (Gemini pelo Firebase AI Logic, em `lib/ai.js`), sem servidor próprio: a cada pergunta vai um resumo do planejamento (sem telefones nem e-mails) e a resposta aparece enquanto é escrita. Se a IA falhar (sem internet, cota esgotada, App Check), a resposta sai da versão básica abaixo. Os modelos ficam em `AI_MODELS`, em `lib/ai.js`: se o primeiro estiver sobrecarregado, tenta o próximo.
 
 - **Nosso casamento**: data, convidados previstos, orçamento máximo, estilo e tipo de cerimônia (em "Detalhes do casamento"). Gera o orçamento por convidado e a divisão sugerida por categoria (`BUDGET_SPLIT`).
 - **Fornecedores**: orçamentos com preço, desconto, taxas, itens inclusos e condições, comparados lado a lado por categoria. "Contratar" cria o gasto no financeiro com entrada e parcelas.
@@ -44,7 +44,7 @@ A lógica fica em `lib/planner.js` e só usa os dados do planejamento, sem IA e 
 - **Inspirações**: murais com fotos, links e paleta de cores para cada parte do casamento.
 - **Documentos**: documentos essenciais (checklist), pastas próprias e todos os arquivos e links anexados em qualquer parte do planejamento.
 - **Acesso do casal**: no painel admin, "Criar acesso do parceiro(a)" cria um segundo login. A conta dele tem `plannerUid` em `accounts` apontando para o planejamento do dono, e os dois editam o mesmo planejamento em tempo real.
-- **Alertas e perguntas** no painel: parcelas vencidas e a vencer, hora de contratar, tarefas atrasadas, orçamento estourado, convidados sem resposta. A cerimonialista conversa em formato de chat (sem IA): entende pedidos soltos ("tô perdida", "me dá uma dica", "tô nervosa", "oi"), dá os próximos passos pelo planejamento do casal, dicas por assunto (vestido, buffet, decoração, foto, música, convites, lua de mel, plano B, cartório...) e sugere perguntas de continuação. Ela lembra o assunto da conversa e o momento do casal com cada fornecedor ("tô olhando", "e o contrato?", "já fechei", "mais dicas") sem repetir o que já disse. O conhecimento fica em `lib/wedding-kb.js`: por assunto, o que fazer para começar, o que perguntar, como comparar, sinais de alerta, o que conferir no contrato e o que alinhar depois de fechar, além de cronogramas prontos do dia (à noite, almoço e praia) que podem ser levados para o Cerimonial.
+- **Alertas e perguntas** no painel: parcelas vencidas e a vencer, hora de contratar, tarefas atrasadas, orçamento estourado, convidados sem resposta. A versão básica da cerimonialista (reserva quando a IA está fora) conversa em formato de chat: entende pedidos soltos ("tô perdida", "me dá uma dica", "tô nervosa", "oi"), dá os próximos passos pelo planejamento do casal, dicas por assunto (vestido, buffet, decoração, foto, música, convites, lua de mel, plano B, cartório...) e sugere perguntas de continuação. Ela lembra o assunto da conversa e o momento do casal com cada fornecedor ("tô olhando", "e o contrato?", "já fechei", "mais dicas") sem repetir o que já disse. O conhecimento fica em `lib/wedding-kb.js`: por assunto, o que fazer para começar, o que perguntar, como comparar, sinais de alerta, o que conferir no contrato e o que alinhar depois de fechar, além de cronogramas prontos do dia (à noite, almoço e praia) que podem ser levados para o Cerimonial.
 
 ## Configuração (uma vez)
 
@@ -55,6 +55,8 @@ A lógica fica em `lib/planner.js` e só usa os dados do planejamento, sem IA e 
 5. **Firestore Database → Regras**: cole o conteúdo de `firestore.rules` e publique.
 6. Hospede todos os arquivos (qualquer hospedagem estática: Firebase Hosting, Netlify, GitHub Pages…). Para testar localmente, sirva a pasta por HTTP (ex.: `python -m http.server`).
 7. Entre em `admin.html` → **Configurações** e cadastre sua chave Pix, nome e cidade do recebedor e os preços padrão.
+8. **Cerimonialista com IA**: Firebase Console → **AI Services → AI Logic** → **Começar** → escolha **Gemini Developer API**. O assistente ativa as APIs e liga o App Check para o AI Logic.
+9. **App Check** (protege a cota da IA): Firebase Console → **App Check → Apps** → registre o app da web com **reCAPTCHA Enterprise** (o domínio do site precisa estar na chave) e cole a chave do site em `APP_CHECK_SITE_KEY`, em `lib/firebase.js`. Para testar em `localhost`, abra o site, copie o *debug token* que aparece no console do navegador e cadastre em **App Check → Apps → Gerenciar tokens de depuração**.
 
 ## Fluxo de venda
 

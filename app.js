@@ -2,6 +2,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https:/
 import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { auth, db, isAdmin, loginToEmail } from './lib/firebase.js';
 import { WEDDING_STYLES, CEREMONY_TYPES, VENDOR_STATUSES, BUDGET_SPLIT, checklist, alerts, answer, QUESTIONS, vendorFinal } from './lib/planner.js';
+import { askAI, parseAI } from './lib/ai.js';
 
 let activeUser = null;
 let plannerSlug = '';
@@ -10,7 +11,7 @@ let siteRsvps = null;
 let stopRealtime = null;
 let saveQueue = Promise.resolve();
 const STORAGE_KEY = 'entre-nos-casamento-v1';
-const navLabels = { documentos: 'Documentos', inspiracoes: 'Inspirações', diad: 'Dia do casamento', luademel: 'Lua de mel', inicio: 'Visão geral', convidados: 'Convidados', financeiro: 'Financeiro', fornecedores: 'Fornecedores', cerimonia: 'Cerimônia & músicas', cerimonial: 'Cerimonial do casamento', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
+const navLabels = { documentos: 'Documentos', inspiracoes: 'Inspirações', diad: 'Dia do casamento', luademel: 'Lua de mel', inicio: 'Visão geral', assistente: 'Cerimonialista virtual', convidados: 'Convidados', financeiro: 'Financeiro', fornecedores: 'Fornecedores', cerimonia: 'Cerimônia & músicas', cerimonial: 'Cerimonial do casamento', checklist: 'O que levar', cronograma: 'Cronograma', anotacoes: 'Anotações' };
 const expenseCategories = ['Comidas & Buffet', 'Decoração & Cenografia', 'Local / Espaço / Sítio', 'Trajes & Beleza', 'Audiovisual', 'Banda & DJ', 'Outros'];
 const renamedCategories = { 'Itens Avulsos & Lembrancinhas': 'Outros' };
 const guestGroups = ['Família Noiva', 'Família Noivo', 'Padrinhos', 'Amigos'];
@@ -144,7 +145,7 @@ let weekStart = weekOf(todayIso());
 let timelineView = 'semana';
 let showDiscarded = false;
 let vendorTab = 'Todos';
-let askThread = [], askMemory = {}; // conversa com a cerimonialista virtual (só nesta sessão)
+let askThread = [], askMemory = {}, aiWarned = false, askBusy = false; // conversa com a cerimonialista virtual (só nesta sessão)
 let dayTrack = 'Tudo';
 const contractStatuses = ['Sem contrato', 'Enviado para assinatura', 'Assinado'];
 const tracks = ['Geral', 'Noiva', 'Noivo'];
@@ -236,7 +237,7 @@ function setPage(page) { currentPage = page; animateNextRender = true; $('.nav-i
 function render() {
   const content = $('#page-content');
   updateTopbarStatus();
-  content.innerHTML = ({ inicio: renderDashboard, convidados: renderGuests, financeiro: renderFinance, fornecedores: renderVendors, diad: renderDayD, luademel: renderHoneymoon, documentos: renderDocuments, inspiracoes: renderInspirations, cerimonia: renderCeremony, cerimonial: renderCeremonial, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
+  content.innerHTML = ({ inicio: renderDashboard, assistente: renderAssistant, convidados: renderGuests, financeiro: renderFinance, fornecedores: renderVendors, diad: renderDayD, luademel: renderHoneymoon, documentos: renderDocuments, inspiracoes: renderInspirations, cerimonia: renderCeremony, cerimonial: renderCeremonial, checklist: renderChecklist, cronograma: renderTimeline, anotacoes: renderNotes })[currentPage]();
   content.classList.toggle('page-enter', animateNextRender);
   if (animateNextRender) setTimeout(() => content.classList.remove('page-enter'), 900);
   animateNextRender = false;
@@ -262,11 +263,37 @@ function askAction(action, button) {
   }
 }
 function askThreadHtml() {
-  const chips = list => `<div class="ask-chips">${list.map(q => `<button type="button" class="ask-chip" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
+  const chips = askChips;
   const hello = `<div class="ask-msg is-bot"><p>Oi! ♡ Sou a sua cerimonialista virtual. Me conte em que pé está cada coisa ("tô olhando o fotógrafo", "já fechei o buffet") ou pergunte o que quiser: fornecedores, contrato, cronograma do dia, cortejo, convites, votos...</p>${askThread.length ? '' : chips(QUESTIONS)}</div>`;
-  return hello + askThread.map((m, i) => `<div class="ask-msg is-me">${esc(m.question)}</div>${m.reply ? `<div class="ask-msg is-bot"><h3>${esc(m.reply.title)}</h3>${m.reply.intro ? `<p>${esc(m.reply.intro)}</p>` : ''}${m.reply.lines.length ? (m.reply.lines.every(l => /^\d+\. /.test(l)) ? `<ol>${m.reply.lines.map(l => `<li>${esc(l.replace(/^\d+\. /, ''))}</li>`).join('')}</ol>` : `<ul>${m.reply.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`) : ''}${m.reply.action ? `<button type="button" class="button button-secondary button-sm ask-action" data-ask-action="${i}">${icon(m.reply.action.type === 'copy' ? 'note' : 'calendar')}${esc(m.reply.action.label)}</button>` : ''}${m.reply.go?.page ? `<button type="button" class="text-button" data-ask-go="${esc(m.reply.go.page)}">${esc(m.reply.go.label || 'Abrir')} → ${esc(navLabels[m.reply.go.page] || '')}</button>` : ''}${i === askThread.length - 1 && m.reply.follow?.length ? chips(m.reply.follow) : ''}</div>` : '<div class="ask-msg is-bot is-typing" aria-label="Digitando"><i></i><i></i><i></i></div>'}`).join('');
+  return hello + askThread.map((m, i) => `<div class="ask-msg is-me">${esc(m.question)}</div>${m.reply?.ai ? aiReplyHtml(m.reply, i) : m.reply ? `<div class="ask-msg is-bot"><h3>${esc(m.reply.title)}</h3>${m.reply.intro ? `<p>${esc(m.reply.intro)}</p>` : ''}${m.reply.lines.length ? (m.reply.lines.every(l => /^\d+\. /.test(l)) ? `<ol>${m.reply.lines.map(l => `<li>${esc(l.replace(/^\d+\. /, ''))}</li>`).join('')}</ol>` : `<ul>${m.reply.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>`) : ''}${m.reply.action ? `<button type="button" class="button button-secondary button-sm ask-action" data-ask-action="${i}">${icon(m.reply.action.type === 'copy' ? 'note' : 'calendar')}${esc(m.reply.action.label)}</button>` : ''}${m.reply.go?.page ? `<button type="button" class="text-button" data-ask-go="${esc(m.reply.go.page)}">${esc(m.reply.go.label || 'Abrir')} → ${esc(navLabels[m.reply.go.page] || '')}</button>` : ''}${i === askThread.length - 1 && m.reply.follow?.length ? chips(m.reply.follow) : ''}</div>` : '<div class="ask-msg is-bot is-typing" aria-label="Digitando"><i></i><i></i><i></i></div>'}`).join('');
 }
+// Resposta da IA: markdown simples (parágrafos, listas e **negrito**), sempre escapado.
+function aiTextHtml(text) {
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>');
+  const blocks = []; let list = null;
+  text.split('\n').forEach(line => {
+    const t = line.trim().replace(/^#+\s*/, ''), ul = t.match(/^[-*•]\s+(.*)/), ol = t.match(/^\d+[.)]\s+(.*)/);
+    if (ul || ol) { const tag = ul ? 'ul' : 'ol'; if (list?.tag !== tag) blocks.push(list = { tag, items: [] }); list.items.push((ul || ol)[1]); return; }
+    list = null; if (t) blocks.push({ p: t });
+  });
+  return blocks.map(b => (b.p ? `<p>${inline(b.p)}</p>` : `<${b.tag}>${b.items.map(item => `<li>${inline(item)}</li>`).join('')}</${b.tag}>`)).join('');
+}
+const askChips = list => `<div class="ask-chips">${list.map(q => `<button type="button" class="ask-chip" data-ask="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
+// O balão da IA é atualizado no lugar enquanto a resposta chega (data-ai-reply), sem redesenhar a conversa.
+function aiReplyInner(reply, i) {
+  const { text, go, follow } = parseAI(reply.raw);
+  if (!text) return `<i></i><i></i><i></i>${reply.slow ? '<span>Pensando com carinho…</span>' : ''}`;
+  return `${aiTextHtml(text)}${reply.done ? '' : '<span class="ask-more" aria-label="Escrevendo"><i></i><i></i><i></i></span>'}${reply.done && reply.action ? `<button type="button" class="button button-secondary button-sm ask-action" data-ask-action="${i}">${icon('calendar')}${esc(reply.action.label)}</button>` : ''}${reply.done && go ? `<button type="button" class="text-button" data-ask-go="${go}">Abrir → ${esc(navLabels[go])}</button>` : ''}${reply.done && i === askThread.length - 1 && follow.length ? askChips(follow) : ''}`;
+}
+function aiReplyHtml(reply, i) { return `<div class="ask-msg is-bot ${parseAI(reply.raw).text ? '' : 'is-typing'}" data-ai-reply="${i}">${aiReplyInner(reply, i)}</div>`; }
 function heading(kicker, title, desc, action = '') { return `<div class="page-heading"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${desc}</p></div><div class="heading-actions">${action}</div></div>`; }
+function renderAssistant() {
+  return `${heading('SUA CERIMONIALISTA', 'Cerimonialista virtual.', 'Converse do seu jeito e veja o que precisa de atenção agora. Eu respondo com os dados do seu casamento.', askThread.length ? '<button type="button" class="button button-secondary" data-ask-clear>Limpar conversa</button>' : '')}
+  <section class="assistant-grid assistant-page">
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Pergunte à cerimonialista</h2><p class="panel-subtitle">Fornecedores, contrato, cronograma do dia, cortejo, convites, votos...</p></div></div><div class="ask-thread" id="ask-thread" aria-live="polite">${askThreadHtml()}</div><form class="ask-form" id="ask-form"><textarea name="q" rows="1" placeholder="Escreva do seu jeito: tô perdida, me dá uma dica..." aria-label="Sua pergunta"></textarea><button class="button button-primary button-sm" type="submit">Enviar</button></form></article>
+    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">O que precisa de atenção</h2><p class="panel-subtitle">Avisos a partir do seu planejamento</p></div></div><div class="alert-list">${alerts(data).map(a => `<button type="button" class="alert-item alert-${a.level}" ${a.action ? `data-action="${a.action}"` : a.page ? `data-go="${a.page}"` : 'disabled'}><span class="alert-dot" aria-hidden="true"></span><span><strong>${esc(a.title)}</strong><small>${esc(a.text)}</small></span></button>`).join('')}</div></article>
+  </section>`;
+}
 function renderDashboard() {
   const countdown = countdownState();
   const pending = data.tasks.filter(t => t.status !== 'Concluído').sort(byTaskOrder), next = pending[0], tasks = pending.slice(0, 5);
@@ -275,14 +302,10 @@ function renderDashboard() {
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const stat = (page, iconName, label, value, foot) => `<button class="card stat-card" data-go="${page}"><div class="stat-top"><span class="stat-icon">${icon(iconName)}</span><span>${label}</span></div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></button>`;
   return `${heading('PAINEL DO CASAMENTO', 'Visão geral.', today, '<button class="button button-pill" data-go="convidados">Convidados</button><button class="button button-pill" data-go="financeiro">Financeiro</button><button class="button button-pill" data-action="edit-wedding">Detalhes do casamento</button>')}
-  <section class="card event-card"><span class="event-icon">${icon('heart')}</span><div class="event-info"><div class="event-title"><h2>${esc(data.wedding.couple || 'Nosso casamento')}</h2><span class="status-pill ${countdown.complete ? 'is-done' : ''}"><i></i>${countdown.unknown ? 'Data a definir' : countdown.complete ? 'Casamento realizado' : countdown.days === 0 ? 'É hoje!' : `Faltam ${countdown.days} ${countdown.days === 1 ? 'dia' : 'dias'}`}</span></div><p>${[esc(data.wedding.venue || 'Local a definir'), dateLabel(data.wedding.date), esc(data.wedding.time || '')].filter(Boolean).join(' · ')}</p><div class="week-chips">${Array.from({ length: 7 }, (_, i) => addDays(weekOf(todayIso()), i)).map(day => { const list = data.tasks.filter(t => t.date === day), done = list.filter(t => t.status === 'Concluído').length; return `<span class="week-chip ${list.length && done === list.length ? 'is-done' : ''} ${day === todayIso() ? 'is-current' : ''}" title="${esc(shortDate(day))}: ${done} de ${list.length} tarefas">${esc(fromIso(day).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', ''))} <small>${done}/${list.length}</small></span>`; }).join('')}</div></div>
+  <section class="card event-card"><span class="event-icon">${icon('heart')}</span><div class="event-info"><div class="event-title"><h2>${esc(data.wedding.couple || 'Nosso casamento')}</h2><span class="status-pill ${countdown.complete ? 'is-done' : ''}"><i></i>${countdown.unknown ? 'Data a definir' : countdown.complete ? 'Casamento realizado' : countdown.days === 0 ? 'É hoje!' : `Faltam ${countdown.days} ${countdown.days === 1 ? 'dia' : 'dias'}`}</span></div><p>${[esc(data.wedding.venue || 'Local a definir'), dateLabel(data.wedding.date), esc(data.wedding.time || '')].filter(Boolean).join(' · ')}</p></div>
   <div class="countdown ${countdown.complete || countdown.unknown ? 'countdown-complete' : ''}" id="live-countdown" aria-label="Contagem regressiva">${countdown.unknown ? '<strong>Quando é o grande dia?</strong><span>Defina a data em "Editar detalhes"</span>' : countdown.complete ? '<strong>O grande dia já aconteceu ♡</strong><span>Atualize a data nos detalhes</span>' : `<div class="count-unit"><strong data-count="days">${countdown.days}</strong><span>dias</span></div><div class="count-unit"><strong data-count="hours">${String(countdown.hours).padStart(2, '0')}</strong><span>horas</span></div><div class="count-unit"><strong data-count="minutes">${String(countdown.minutes).padStart(2, '0')}</strong><span>min</span></div><div class="count-unit"><strong data-count="seconds">${String(countdown.seconds).padStart(2, '0')}</strong><span>seg</span></div>`}</div>
   <div class="event-actions"><button class="button button-primary" data-go="cronograma">${icon('calendar')} Ver cronograma</button><button class="button button-secondary" data-action="edit-wedding">${icon('settings')} Editar detalhes</button></div></section>
   ${weddingProfile()}
-  <section class="assistant-grid">
-    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Sua cerimonialista virtual</h2><p class="panel-subtitle">O que precisa de atenção agora</p></div></div><div class="alert-list">${alerts(data).map(a => `<button type="button" class="alert-item alert-${a.level}" ${a.action ? `data-action="${a.action}"` : a.page ? `data-go="${a.page}"` : 'disabled'}><span class="alert-dot" aria-hidden="true"></span><span><strong>${esc(a.title)}</strong><small>${esc(a.text)}</small></span></button>`).join('')}</div></article>
-    <article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Pergunte à cerimonialista</h2><p class="panel-subtitle">Converse do seu jeito. Eu respondo com os dados do seu casamento</p></div>${askThread.length ? '<button type="button" class="text-button" data-ask-clear>Limpar conversa</button>' : ''}</div><div class="ask-thread" id="ask-thread" aria-live="polite">${askThreadHtml()}</div><form class="ask-form" id="ask-form"><input name="q" placeholder="Escreva do seu jeito: tô perdida, me dá uma dica..." aria-label="Sua pergunta" autocomplete="off"><button class="button button-primary button-sm" type="submit">Enviar</button></form></article>
-  </section>
   <section class="notice-card"><div><strong>${next ? 'Próximo passo' : data.tasks.length ? 'Tudo em dia' : 'Vamos começar?'}</strong><p>${next ? `${esc(next.title)} · ${esc(next.date ? shortDate(next.date) : 'Prioridade')}${next.time ? `, ${esc(next.time)}` : ''}` : data.tasks.length ? 'Todas as tarefas do cronograma foram concluídas. Agora é só aproveitar.' : 'Seu organizador está novinho. Adicione a primeira tarefa do cronograma ou cadastre os convidados.'}</p></div>${next ? `<button class="button button-secondary" data-task-done="${next.id}">Marcar como feita</button>` : data.tasks.length ? '' : `<button class="button button-secondary" data-action="add-task">${icon('plus')} Adicionar tarefa</button>`}</section>
   <section class="stats-grid">${stat('convidados', 'users', 'Confirmados', confirmedGuests(), `de ${totalGuests()} pessoas na lista`)}${stat('financeiro', 'wallet', 'Total pago', money(spent()), `de ${money(planned() - gifted())} a pagar no total`)}${stat('financeiro', 'clock', 'Saldo a pagar', money(due()), `${paidRatio}% já quitado ou ganho`)}${stat('cronograma', 'check', 'Tarefas', `${doneTasks}/${data.tasks.length}`, `${progress()}% do cronograma`)}${stat('checklist', 'box', 'Itens no local', `${onSite}/${data.supplies.length}`, 'do checklist do que levar')}</section>
   <section class="dashboard-grid"><article class="card panel"><div class="panel-head"><div><h2 class="panel-title">Visão do orçamento</h2><p class="panel-subtitle">Quanto já foi pago e para onde vai o dinheiro</p></div><button class="text-button" data-go="financeiro">Ver detalhes →</button></div><div class="budget-total">${money(spent())}</div><div class="budget-meta"><span>do total de ${money(planned())}</span><span>${paidRatio}% pago</span></div><div class="progress-track"><span style="width:${paidRatio}%"></span></div><div class="legend-row"><span><i class="legend-dot"></i>Valor pago</span><span><i class="legend-dot soft"></i>Restante</span></div><div class="category-list" style="margin-top:22px">${groups.length ? groups.map(x => `<div class="category-row"><span class="category-name">${esc(x.c)}</span><span class="category-value">${money(x.sum)}</span><div class="mini-track"><span style="width:${Math.max(3, Math.round(x.sum / planned() * 100))}%"></span></div></div>`).join('') : empty('Adicione seus primeiros gastos.')}</div></article>
@@ -293,7 +316,7 @@ function weddingProfile() {
   const w = data.wedding, budget = Number(w.budget || 0), guests = Number(w.guestsExpected || 0), gifts = gifted(), used = planned() - gifts;
   const ratio = budget ? Math.round(used / budget * 100) : 0, over = budget && used > budget;
   return `<section class="card wedding-profile"><div class="profile-info"><p class="eyebrow">NOSSO CASAMENTO</p><h2>Um dia para lembrar</h2><ul>${w.date ? `<li>${icon('calendar')}${dateLabel(w.date)}</li>` : ''}<li>${icon('users')}${guests ? `${guests} convidados previstos` : 'Convidados previstos a definir'}</li><li>${icon('heart')}Estilo ${esc((w.style || 'a definir').toLowerCase())}${w.ceremonyType ? ` · cerimônia ${esc(w.ceremonyType.toLowerCase())}` : ''}</li></ul></div>
-    <div class="profile-boxes"><div class="profile-box"><span>Orçamento máximo</span><strong class="is-accent">${budget ? money(budget) : '—'}</strong></div><div class="profile-box"><span>Por convidado</span><strong>${budget && guests ? money(budget / guests) : '—'}</strong></div><div class="profile-box profile-used"><span>Já orçado</span><strong class="${over ? 'is-over' : ''}">${money(used)}</strong>${budget ? `<div class="mini-track ${over ? 'is-over' : ''}"><span style="width:${Math.min(100, ratio)}%"></span></div><small>${over ? `${money(used - budget)} acima do orçamento máximo (${ratio}%)` : `${ratio}% do orçamento máximo`}</small>` : ''}${gifts ? `<small class="profile-gifts">Sem contar ${money(gifts)} em presentes ganhos</small>` : ''}</div></div>
+    <div class="profile-boxes"><div class="profile-box"><span>Orçamento máximo</span><strong class="is-accent">${budget ? money(budget) : '—'}</strong></div><div class="profile-box"><span>Por convidado</span><strong>${guests ? money(used / guests) : '—'}</strong>${guests ? `<small>Até agora, pelo já orçado${budget ? ` · limite ${money(budget / guests)}` : ''}</small>` : ''}</div><div class="profile-box profile-used"><span>Já orçado</span><strong class="${over ? 'is-over' : ''}">${money(used)}</strong>${budget ? `<div class="mini-track ${over ? 'is-over' : ''}"><span style="width:${Math.min(100, ratio)}%"></span></div><small>${over ? `${money(used - budget)} acima do orçamento máximo (${ratio}%)` : `${ratio}% do orçamento máximo`}</small>` : ''}${gifts ? `<small class="profile-gifts">Sem contar ${money(gifts)} em presentes ganhos</small>` : ''}</div></div>
     ${budget && guests ? '<p class="profile-note">O valor por convidado é uma referência para o casamento inteiro, não só para a comida.</p>' : `<button type="button" class="button button-secondary button-sm profile-edit" data-action="edit-wedding">${icon('settings')}Definir orçamento e convidados</button>`}</section>`;
 }
 function renderVendors() {
@@ -742,11 +765,16 @@ async function exportIcs(who, share = false) {
   notify(`${count} ${count === 1 ? 'tarefa enviada' : 'tarefas enviadas'} para a agenda. Abra o arquivo baixado para confirmar.`);
 }
 function updateNavBadges() {
-  const item = $('.nav-item[data-page="cronograma"]'); if (!item) return;
-  const n = urgentTasks().length; let badge = item.querySelector('.nav-badge');
+  const urgent = alerts(data).filter(a => a.level === 'danger').length;
+  setNavBadge('cronograma', urgentTasks().length, n => `${n} ${n === 1 ? 'tarefa atrasada ou com prazo acabando' : 'tarefas atrasadas ou com prazo acabando'}`);
+  setNavBadge('assistente', urgent, n => `${n} ${n === 1 ? 'aviso urgente' : 'avisos urgentes'} da cerimonialista`);
+}
+function setNavBadge(page, n, title) {
+  const item = $(`.nav-item[data-page="${page}"]`); if (!item) return;
+  let badge = item.querySelector('.nav-badge');
   if (!n) { badge?.remove(); return; }
   if (!badge) { badge = Object.assign(document.createElement('b'), { className: 'nav-badge' }); item.append(badge); }
-  badge.textContent = n; badge.title = `${n} ${n === 1 ? 'tarefa atrasada ou com prazo acabando' : 'tarefas atrasadas ou com prazo acabando'}`;
+  badge.textContent = n; badge.title = title(n);
 }
 function renderBoard() {
   const today = todayIso(), current = today.slice(0, 7), wedding = data.wedding.date;
@@ -1254,21 +1282,50 @@ function page_bindSmart() {
   }));
   page.querySelectorAll('[data-vendor-tab]').forEach(b => b.addEventListener('click', () => { vendorTab = b.dataset.vendorTab; render(); }));
   page.querySelectorAll('[data-day-track]').forEach(b => b.addEventListener('click', () => { dayTrack = b.dataset.dayTrack; render(); }));
-  const thread = $('#ask-thread');
-  const paint = () => { thread.innerHTML = askThreadHtml(); thread.scrollTop = thread.scrollHeight; bindThread(); };
-  const ask = question => {
-    askThread.push({ question, reply: null });
-    paint();
-    setTimeout(() => { const reply = answer(question, data, undefined, askMemory); askMemory = reply.memory; askThread[askThread.length - 1].reply = reply; askThread = askThread.slice(-8); paint(); }, 450);
+  // A conversa continua mesmo se a página for trocada no meio da resposta: sempre pinta no #ask-thread atual.
+  const paint = () => { const thread = $('#ask-thread'); if (!thread) return; thread.innerHTML = askThreadHtml(); thread.scrollTop = thread.scrollHeight; bindThread(thread); };
+  const ask = async question => {
+    if (askBusy) { notify('Espere eu terminar de responder ♡'); return; }
+    askBusy = true;
+    try { await askOnce(question); } finally { askBusy = false; }
   };
-  const bindThread = () => {
+  const askOnce = async question => {
+    const entry = { question, reply: null }, local = answer(question, data, undefined, askMemory);
+    const history = askThread.filter(m => m.reply?.ai && m.reply.done).slice(-10).map(m => ({ question: m.question, text: m.reply.raw }));
+    askMemory = local.memory;
+    entry.reply = { ai: true, raw: '', done: false, action: local.action?.type === 'import-timeline' ? local.action : null };
+    askThread = askThread.slice(-11); askThread.push(entry); paint();
+    const i = askThread.length - 1;
+    const live = () => {
+      const el = $(`#ask-thread [data-ai-reply="${i}"]`);
+      if (!el) { paint(); return; }
+      el.classList.toggle('is-typing', !parseAI(entry.reply.raw).text);
+      el.innerHTML = aiReplyInner(entry.reply, i); bindThread(el);
+      el.parentElement.scrollTop = el.parentElement.scrollHeight;
+    };
+    const slow = setTimeout(() => { entry.reply.slow = true; if (!entry.reply.raw) live(); }, 5000);
+    try {
+      await askAI(history, question, data, raw => { entry.reply.raw = raw; live(); });
+      entry.reply.done = true; live();
+    } catch (error) {
+      console.warn('Cerimonialista com IA indisponível; usando a resposta local.', error);
+      if (!aiWarned) { aiWarned = true; notify('A IA está indisponível agora. Respondi com a versão básica da cerimonialista.'); }
+      entry.reply = local; paint();
+    } finally { clearTimeout(slow); }
+  };
+  const bindThread = thread => {
     thread.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => ask(b.dataset.ask)));
     thread.querySelectorAll('[data-ask-go]').forEach(b => b.addEventListener('click', () => setPage(b.dataset.askGo)));
     thread.querySelectorAll('[data-ask-action]').forEach(b => b.addEventListener('click', () => askAction(askThread[Number(b.dataset.askAction)]?.reply?.action, b)));
   };
-  if (thread) { bindThread(); thread.scrollTop = thread.scrollHeight; }
+  const thread = $('#ask-thread');
+  if (thread) { bindThread(thread); thread.scrollTop = thread.scrollHeight; }
   page.querySelector('[data-ask-clear]')?.addEventListener('click', () => { askThread = []; askMemory = {}; render(); });
-  $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) { e.target.q.value = ''; ask(q); } });
+  // Caixa da pergunta cresce para baixo conforme o texto; Enter envia e Shift+Enter quebra a linha.
+  const askBox = $('#ask-form textarea'), fitAskBox = () => { askBox.style.height = 'auto'; askBox.style.height = `${askBox.scrollHeight + askBox.offsetHeight - askBox.clientHeight}px`; };
+  askBox?.addEventListener('input', fitAskBox);
+  askBox?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askBox.form.requestSubmit(); } });
+  $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) { e.target.q.value = ''; fitAskBox(); ask(q); } });
 }
 function bindWeekEvents() {
   const page = $('#page-content');
@@ -1339,7 +1396,8 @@ try { if (localStorage.getItem('entre-nos-sidebar') === 'collapsed') setSidebarC
 
 const guideSteps = [
   { title: 'Bem-vindos ao Entre Nós ♡', text: 'Este é o espaço de vocês para organizar o casamento. Em poucos passos mostramos onde fica cada coisa. Tudo o que vocês fizerem é salvo automaticamente na conta.' },
-  { page: 'inicio', target: '.event-card', title: 'O grande dia', text: 'Aqui ficam o casal, o local, a data e a contagem regressiva. As pílulas Qua, Qui, Sex e Sáb mostram quantas tarefas de cada dia já foram feitas. Use "Editar detalhes" para mudar data, horário ou local.' },
+  { page: 'inicio', target: '.event-card', title: 'O grande dia', text: 'Aqui ficam o casal, o local, a data e a contagem regressiva. Use "Editar detalhes" para mudar data, horário ou local.' },
+  { page: 'assistente', target: '.nav-item[data-page="assistente"]', title: 'Cerimonialista virtual', text: 'Converse do seu jeito sobre fornecedores, contrato, cronograma do dia e o que mais precisar. Ao lado ficam os avisos do que precisa de atenção agora; o número no menu mostra os urgentes.' },
   { page: 'inicio', target: '.notice-card', title: 'Próximo passo', text: 'Mostra a próxima tarefa pendente do cronograma. Terminou? Clique em "Marcar como feita" e o painel já mostra a seguinte.' },
   { page: 'inicio', target: '.stats-grid', title: 'Resumo em números', text: 'Convidados confirmados, quanto já foi pago, o saldo, as tarefas e os itens no local. Clique em qualquer card para abrir a página correspondente.' },
   { page: 'cronograma', target: '.nav-item[data-page="cronograma"]', title: 'Cronograma', text: 'Um calendário semanal: avance ou volte as semanas, arraste as tarefas entre os dias e use Prioridades para o que ainda não tem data. Em "Por pessoa" ficam as tarefas de cada um com o prazo, e o botão "Na agenda" coloca os lembretes no celular.' },
