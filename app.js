@@ -1322,7 +1322,8 @@ function page_bindSmart() {
   if (thread) { bindThread(thread); thread.scrollTop = thread.scrollHeight; }
   page.querySelector('[data-ask-clear]')?.addEventListener('click', () => { askThread = []; askMemory = {}; render(); });
   // Caixa da pergunta cresce para baixo conforme o texto; Enter envia e Shift+Enter quebra a linha.
-  const askBox = $('#ask-form textarea'), fitAskBox = () => { askBox.style.height = 'auto'; askBox.style.height = `${askBox.scrollHeight + askBox.offsetHeight - askBox.clientHeight}px`; };
+  // A barra de rolagem só aparece quando o texto passa da altura máxima (160px no CSS).
+  const askBox = $('#ask-form textarea'), fitAskBox = () => { askBox.style.height = 'auto'; askBox.style.height = `${askBox.scrollHeight + askBox.offsetHeight - askBox.clientHeight}px`; askBox.style.overflowY = askBox.scrollHeight > 160 ? 'auto' : 'hidden'; };
   askBox?.addEventListener('input', fitAskBox);
   askBox?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askBox.form.requestSubmit(); } });
   $('#ask-form')?.addEventListener('submit', e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) { e.target.q.value = ''; fitAskBox(); ask(q); } });
