@@ -318,6 +318,20 @@ td[data-label="Valor previsto"], td[data-label="Valor pago"] { text-align: right
 .budget-due strong { color: var(--danger); }
 .budget-own strong { color: var(--accent); }
 .budget-gift strong { color: var(--sage-dark); }
+.food-card-box { margin-bottom: 20px; }
+.food-card-box strong { color: var(--accent); }
+.savings-box { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 14px 28px; padding: 20px; margin: -6px 0 20px; }
+.savings-main { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.savings-main label { display: grid; gap: 2px; }
+.savings-main label span { color: var(--muted); font-size: 14px; }
+.savings-main label small, .savings-info small { color: var(--muted); font-size: 13px; }
+.savings-input { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: #fff; }
+.savings-input:focus-within { border-color: var(--accent); }
+.savings-input span { color: var(--muted); font-size: 15px; }
+.savings-input input { width: 150px; border: 0; outline: 0; background: transparent; color: var(--sage-dark); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.savings-info { display: grid; gap: 8px; }
+@media (max-width: 760px) { .savings-box { grid-template-columns: 1fr; } }
+@media (max-width: 420px) { .savings-main { flex-direction: column; align-items: stretch; } .savings-input input { width: 100%; } }
 td[data-label="Falta pagar"] { text-align: right; font-variant-numeric: tabular-nums; }
 .due-value { color: var(--danger); font-weight: 500; }
 .due-done, .due-gift { color: var(--muted); font-size: 13px; }
@@ -365,6 +379,12 @@ td[data-label="Falta pagar"] { text-align: right; font-variant-numeric: tabular-
 .print-header, p.print-note { display: none; }
 .step-index { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
 .ceremony-table strong { color: var(--ink); font-weight: 500; }
+.ceremony-row[data-ceremony-id] { cursor: grab; user-select: none; }
+.ceremony-row.is-dragging { opacity: .4; cursor: grabbing; }
+.ceremony-row.drop-before > td { box-shadow: inset 0 3px 0 var(--accent); }
+.ceremony-row.drop-after > td { box-shadow: inset 0 -3px 0 var(--accent); }
+.step-cell { display: inline-flex; align-items: center; gap: 6px; }
+.drag-handle { color: var(--muted); font-size: 13px; letter-spacing: -3px; line-height: 1; cursor: grab; touch-action: none; }
 .music-cell { min-width: 160px; }
 .music-title { color: var(--ink); font-weight: 500; }
 .music-artist { margin-top: 2px; color: var(--muted); font-size: 12px; }
@@ -1034,6 +1054,10 @@ body.sidebar-collapsed .nav-badge { position: absolute; top: 4px; right: 6px; mi
   .table-wrap tbody tr td:first-child { grid-column: 1/-1; }
   .table-wrap tbody tr td .person-cell { min-width: 0; }
   .ceremony-table .table-wrap tbody tr td:nth-child(2), .ceremony-table .table-wrap tbody tr td:nth-child(5) { grid-column: 1/-1; }
+  .ceremony-row.drop-before > td, .ceremony-row.drop-after > td { box-shadow: none; }
+  .ceremony-row.drop-before { box-shadow: 0 -4px 0 -1px var(--accent); }
+  .ceremony-row.drop-after { box-shadow: 0 4px 0 -1px var(--accent); }
+  .drag-handle { padding: 8px 6px 8px 0; font-size: 16px; }
   .table-footer { line-height: 1.6; }
   .icon-button, .row-actions button { width: 40px; height: 40px; }
   .note-modal form { padding: 20px 16px; }
